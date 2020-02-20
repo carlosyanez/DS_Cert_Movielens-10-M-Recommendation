@@ -34,3 +34,9 @@ vignettes/*.pdf
 # Temporary files created by R markdown
 *.utf8.md
 *.knit.md
+movielens.RData
+ml-10M100K/ratings.dat
+ml-10M100K/movies.dat
+Data_Science_Capstone_Movielens.Rproj
+Movielens_Recommender_Report.log
+movielens_data_loader.R

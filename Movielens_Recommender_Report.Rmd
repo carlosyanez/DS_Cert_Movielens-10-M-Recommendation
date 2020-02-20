@@ -1,0 +1,468 @@
+---
+title: "Data Science Capstone - Movielens Recommendation Model"
+author: "Carlos Yáñez Santibáñez"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+abstract: "Abstract"
+output:
+  pdf_document:
+#    documentclass: article
+    number_sections: yes
+    toc: yes
+    fig_caption: yes
+linkcolor: blue
+geometry: margin=1in
+mainfont: Arial
+fontsize: 11pt
+---
+
+```{r, setup, include=FALSE}
+#### WARNING : Running the notebook from scratch, may take SEVERAL HOURS - Run at your own time.####
+
+# Avoid to run time consuming analysis - comment if you want to run the notebook from scratch
+
+knitr::opts_chunk$set(echo=FALSE,eval=FALSE,message=FALSE, warning=FALSE,tidy=TRUE,fig.align="center")
+
+# Load environment with saved dataset for faster knitting - comment if you want to run the notebook from scratch
+# you can download the file from https://drive.google.com/open?id=1mvFdnoXNTD95Y4GHnYg1HhAStowl4ppT
+
+load("movielens.RData") 
+
+# Load functions created for this excercise
+source("hybrid_recommender.R", echo = F, prompt.echo = "", spaced = F)
+
+
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+if(!require(data.table)) install.packages("data.table", repos = "http://cran.us.r-project.org")
+if(!require(gtools)) install.packages("gtools", repos = "http://cran.us.r-project.org")
+if(!require(ClusterR)) install.packages("ClusterR", repos = "http://cran.us.r-project.org")
+if(!require(kableExtra)) install.packages("kableExtra", repos = "http://cran.us.r-project.org")
+if(!require(DiagrammeR)) install.packages("DiagrammeR", repos = "http://cran.us.r-project.org")
+if(!require(formatR)) install.packages("formatR", repos = "http://cran.us.r-project.org")
+
+
+
+```
+
+```{r Load_Movielens}
+
+## Uncomment the below lines to reload the Movielens database
+#movielens_10M<-Movielens_Data_Loader()
+#edx <- movielens_10M$edx
+#validation <- movielens_10M$validation
+#rm(movielens_10M)
+```
+\newpage
+# Introduction
+ <!-- introduction/overview/executive summary section that describes the dataset and summarizes the goal of the project and key steps that were performed -->
+
+This document presents a machine learning model that aim to predict (recommend) movie ratings for particular users of a streaming or review platform. This report is a capstone assignment for HarvardX's Professional Certificate in Data Science, which can be taken at the edX platform. The program is available at   [https://www.edx.org/professional-certificate/harvardx-data-science]( https://www.edx.org/professional-certificate/harvardx-data-science).
+
+The data used in this excercise comes from  the [Movielens 10M Dataset](https://grouplens.org/datasets/movielens/10m/). After using the donwload code provided in the course, the resulting dataframe contains observations with an individual movie rating from a particular user, each with the below attributes:
+
+1. **`r colnames(edx)[1]`** : Unique user identifier
+2. **`r colnames(edx)[2]`** : Unique movie identified
+3. **`r colnames(edx)[3]`** : Rating given to this movie by the particular user.
+4. **`r colnames(edx)[4]`** : Timestamp indicating when the the user submitted the rating.
+5. **`r colnames(edx)[5]`** : Title of the film and its release year in brackets. Please note that different movies can have the same name (e.g. remakes), thus `r colnames(edx)[2]` is a better unique identifier.
+6. **`r colnames(edx)[6]`** : List of all genres in which this movie can be clasiffied.
+
+```{r Column_Names}
+#Used to retrieve column names during report writing
+colnames(edx)
+```
+
+The goal of this project is to generate a model that can predict a particular movie rating for each user, as close as possible to the actual rating given to each film. In order to assess the model performance, the **Root Square Mean Error (RMSE)** will be calculated for a validation dataset. Training and validation dataset are generated using the code provided in the assignment instructions. In order to aim for a full mark, this report will target for a RMSE lower than **0.86490**.
+
+The starting point of this project is the model presented in section [33.7 of the course's textbook](https://rafalab.github.io/dsbook/large-datasets.html#recommendation-systems). From there, the following steps are presented:
+
+1. Analysis of the textbook's model and possible ways to improve it.
+2. Improvement to the model via user clustering.
+3. Tuning improved model.
+4. Evaluation against validation dataset.
+5. Conclusion.
+
+The following sections present the above in detail.
+
+# Methods and Analysis
+<!-- methods/analysis section that explains the process and techniques used, including data cleaning, data exploration and visualization, insights gained, and your modeling approach -->
+
+As mentioned in the introduction, this reports starts with the model presented in the textbook and then explore options to improve segmenting the users. However before conducting any modelling, the data needs to be cleaned up a little bit and then split into training and testing set.
+
+In terms of data cleaning, three operations have been considered, namely:
+
+* Remove the year from the title and storing in a different column. This may be useful for modelling.
+* For the same reasons, convert the timestamp into a year number.
+* Finally, a sequential number will be added (*row_id*). This will be create a single unique ID for each record (instead of a userId and movieId combination) and maybe useful to speed up filtering, given the large size of the dataset.
+
+For this purposes, the below function **Tidy_Up** has been created. The code for this function is available on the included R file. Using the below code the train and test sets are created.
+
+
+```{r Tidy_Up_Data, echo=TRUE}
+#tidy up data 
+edx_tidy_temp <- Tidy_Up(edx)
+
+#divide Train and Test datasets
+set.seed(200, sample.kind="Rounding")
+edx_train_test <- Train_Test(edx_tidy_temp)
+
+#remove temporary and original dataset to avoid filling up memory.
+rm("edx_tidy_temp","edx")
+
+```
+
+Below, this is a sample of the generated training set (*edx_train_test$train*).
+
+```{r sample_training_dataset, eval=TRUE, echo=FALSE, message=FALSE, warning=FALSE}
+edx_train_test$train[1:10,] %>% kable(caption="Training Dataset - Sample",format = "latex", booktabs = TRUE) %>%  kable_styling(latex_options = c("hold_position","scale_down"))
+```
+
+
+Once completed data cleaning and split, the first step is to implement the model presented in the textbook and asses it's results. This model estimates rating by assuming that a particular rating from a particular user can be calculated as a deviation (bias) from the average rating for all movies (the *true* rating). In order to account for cases where movies and users don't have many reviews against them, weighting parametres have been added. This can be expressed by the below equation:
+
+$$\large{predicted rating =  \hat{\mu} + b_i + b_u}$$
+
+where $\hat(\mu)$ is the average rating for all movies in the dataset, and $b_i$ and $b_u$ being the movie bias and user bias (respectively), defined as follows:
+
+$$b_i = (1)\overset{n}{\underset{j=1}{\Sigma}} ( \hat{\mu} - rating_j)$$
+
+
+```{r Flowchart_examples}
+grViz("digraph flowchart {
+      # node definitions with substituted label text
+      node [fontname = Helvetica, shape = rectangle]        
+      tab1 [label = '@@1']
+      tab2 [label = '@@2']
+      tab3 [label = '@@3']
+      tab4 [label = '@@4']
+      tab5 [label = '@@5']
+
+      # edge definitions with the node IDs
+      tab1 -> tab2;
+      tab2 -> tab3;
+      tab2 -> tab4 -> tab5
+      }
+
+      [1]: 'Questionnaire sent to n=1000 participants'
+      [2]: 'Participants came to clinic for evaluation n=700'
+      [3]: 'Participants non-eligible for the study n=100'
+      [4]: 'Participants eligible for the study n=600'
+      [5]: 'Study sample n=600'
+      ")
+```
+
+
+
+
+```{r First_Parametres}
+user_vector <-User_Vectoriser(edx_train_test$train)
+general_biases <- General_Biases(edx_train_test$train)
+
+```
+
+
+```{r Cluster_Optimisation}
+
+stats <- tibble(clustering=character(),iterations=double(),cutoff=double(),genres=double(),cluster_n=double(),RMSE = double(),RMSE_1 = double(),RMSE_2 = double(),RMSE_3 = double(),method_1=double(),method_2=double(),method_3=double())
+
+genres_n<-3:6
+cluster_n <- 3:6
+secondary_cutoff <- c(0.4,0.5,0.6)
+iterations <-2:4
+
+
+for(g in iterations){
+  for(h in secondary_cutoff){
+    for (i in genres_n){
+      for(j in cluster_n){
+ 
+        user_classification  <- User_Classifier(edx_train_test$train,user_vector,
+                                                genres=i,step_cutoff=h,cluster_n=j,cluster_type="GMM",iterations=g)
+        biases_by_group <- Group_Biases(edx_train_test$train,user_classification)
+        results<-Rating_Predicter(edx_train_test$test,user_classification,biases_by_group,general_biases)
+        stats <- add_row(stats,clustering="GMM",iterations=g,cutoff=h,genres=i,cluster_n=j,RMSE = results$RMSE$overall,
+                         RMSE_1=results$RMSE$`1`,RMSE_2=results$RMSE$`2`,RMSE_3=results$RMSE$`3`,
+                         method_1=results$distribution_percentage$`1`,method_2=results$distribution_percentage$`2`,
+                         method_3=results$distribution_percentage$`3`)
+     }
+   }
+ }
+}
+rm(g,h,i,j)
+
+```
+
+
+```{r Clustering_Statistics, eval=TRUE, echo=FALSE, message=FALSE, warning=FALSE}
+
+clustering_stats[which.min(clustering_stats$RMSE),] %>% kable(caption="Optimal Clustering Parametres",format = "latex", booktabs = TRUE) %>%  kable_styling(latex_options = c("hold_position","scale_down"))
+#clustering_stats%>% ggplot(aes(x=genres,y=RMSE,color=cluster_n,shape=as.factor(iterations))) + geom_point()
+#clustering_stats%>% ggplot(aes(x=cluster_n,y=RMSE,color=genres,shape=as.factor(iterations))) + geom_point()
+#clustering_stats%>% ggplot(aes(x=iterations,y=RMSE,color=genres,shape=as.factor(cluster_n))) + geom_point()
+
+```
+
+
+```{r RMSE Graph, eval=TRUE, echo=FALSE, message=FALSE, warning=FALSE}
+clustering_stats%>% ggplot(aes(x=cluster_n,y=RMSE,color=genres)) + geom_point() + facet_grid(.~iterations) +theme(legend.position="bottom") +labs(title="Model tunning, by iterations, number of genres and target clusters per iteration",x="Clusters per iteration", y = "RMSE")+ geom_hline(yintercept=min(clustering_stats$RMSE), linetype="dashed", color = "red",size=0.5) + theme_grey()
+```
+
+
+```{r Optimal_Clusters}
+
+genres <- clustering_stats[which.min(clustering_stats$RMSE),]$genres
+cluster_n <- clustering_stats[which.min(clustering_stats$RMSE),]$cluster_n
+step_cutoff <- clustering_stats[which.min(clustering_stats$RMSE),]$cutoff
+clustering_iterations <- clustering_stats[which.min(clustering_stats$RMSE),]$iterations
+cluster_type <- "GMM"
+
+
+user_classification  <- User_Classifier(edx_train_test$train,user_vector,
+                                              genres=genres,step_cutoff=step_cutoff,
+                                        cluster_n=cluster_n,cluster_type=cluster_type,
+                                        iterations=clustering_iterations)
+
+ 
+```
+
+
+```{r User_Classes, eval=TRUE}
+user_classification %>% group_by(group) %>% summarise(n=n())%>% ggplot(aes(x=as.factor(group),y=n)) +  geom_bar(stat="identity")
+user_classification %>% group_by(group) %>% summarise(n=n())
+```
+
+
+```{r Lambda_Tuning_1}
+
+stats <- tibble(k=double(),lambda_1=double(),lambda_2=double(),
+                RMSE = double(),RMSE_1 = double(),RMSE_2 = double(),
+                RMSE_3 =double(),
+                method_1=double(),method_2=double(),method_3=double())
+
+lambda_1 <- seq(0,8,0.5)
+lambda_2 <- seq(0,8,0.5)
+
+
+for(k in 1:1){
+
+  edx_cross_validation <- Train_Test(edx_train_test$train)
+              
+  user_vector <-User_Vectoriser(edx_cross_validation$train)
+  general_biases <- General_Biases(edx_cross_validation$train)
+  user_classification  <- User_Classifier(edx_cross_validation$train,user_vector,
+                                              genres=genres,step_cutoff=step_cutoff,
+                                        cluster_n=cluster_n,cluster_type=cluster_type,
+                                        iterations=clustering_iterations)  
+  
+  
+  for (i in lambda_1){
+    for(j in lambda_2){
+
+              
+              biases_by_group <- Group_Biases(edx_cross_validation$train,user_classification,lambda_1=i,lambda_2=j)
+           
+              results<-Rating_Predicter(edx_cross_validation$test,user_classification,biases_by_group,general_biases)
+              
+              stats <- add_row(stats, k=k, lambda_1=i,lambda_2=j,
+                               RMSE = results$RMSE$overall,
+                         RMSE_1=results$RMSE$`1`,RMSE_2=results$RMSE$`2`,RMSE_3=results$RMSE$`3`,
+                         method_1=results$distribution_percentage$`1`,method_2=results$distribution_percentage$`2`,
+                         method_3=results$distribution_percentage$`3`)
+  }
+  }
+  
+  rm(edx_cross_validation)
+
+}
+
+group_lambda_stats_1 <- stats
+rm(i,j,k)
+```
+
+
+
+```{r Lambda_Tuning_2,eval=TRUE}
+
+cases <- 20
+group_lambda_stats_1<- unique(group_lambda_stats_1)
+
+#lambda_aggregate_stats_1<-group_lambda_stats_1 %>% group_by(lambda_1,lambda_2) %>% summarise(Avg_RMSE=mean(RMSE),Avg_Method_1=mean(method_1))
+
+lambda_top_20_rmse_1<-group_lambda_stats_1 %>% arrange(RMSE) %>% head(cases)    
+lambda_top_20_rmse_1$cases <- seq.int(nrow(lambda_top_20_rmse_1))
+
+lambda_top_20_rmse_1
+
+rm("group_lambda_stats_1")
+```
+
+
+```{r Lambda_Tuning_3}
+
+stats <- tibble(k=double(), cases=double(),lambda_1=double(),lambda_2=double(),
+                RMSE = double(),RMSE_1 = double(),RMSE_2 = double(),
+                RMSE_3 =double(),
+                method_1=double(),method_2=double(),method_3=double())
+
+
+for(k in 2:6){
+
+  edx_cross_validation <- Train_Test(edx_train_test$train)
+              
+  user_vector <-User_Vectoriser(edx_cross_validation$train)
+  general_biases <- General_Biases(edx_cross_validation$train)
+  user_classification  <- User_Classifier(edx_cross_validation$train,user_vector,
+                                              genres=genres,step_cutoff=step_cutoff,
+                                        cluster_n=cluster_n,cluster_type=cluster_type,
+                                        iterations=clustering_iterations)  
+  
+  
+  for (i in 1:cases){
+  
+
+              
+              biases_by_group <- Group_Biases(edx_cross_validation$train,user_classification,
+                                              lambda_1=lambda_top_20_rmse_1[i,]$lambda_1,
+                                              lambda_2=lambda_top_20_rmse_1[i,]$lambda_2)
+           
+              results<-Rating_Predicter(edx_cross_validation$test,user_classification,biases_by_group,general_biases)
+              
+              stats <- add_row(stats, k=k, cases=i,lambda_1=lambda_top_20_rmse_1[i,]$lambda_1,
+                               lambda_2=lambda_top_20_rmse_1[i,]$lambda_2,
+                               RMSE = results$RMSE$overall,
+                         RMSE_1=results$RMSE$`1`,RMSE_2=results$RMSE$`2`,RMSE_3=results$RMSE$`3`,
+                         method_1=results$distribution_percentage$`1`,method_2=results$distribution_percentage$`2`,
+                         method_3=results$distribution_percentage$`3`)
+  }
+  
+  
+  rm(edx_cross_validation)
+
+}
+
+group_lambda_stats <- stats
+rm(i,j,k)
+   
+```
+
+```{r Lambda_Tuning_4, eval=TRUE}
+
+group_lambda_stats <-rbind(group_lambda_stats,lambda_top_20_rmse_1)
+group_lambda_stats<- unique(group_lambda_stats)
+
+lambda_aggregate_stats<-group_lambda_stats %>% group_by(k,lambda_1,lambda_2) %>% summarise(Avg_RMSE=mean(RMSE),Avg_Method_1=mean(method_1))
+
+lambda_top_rmse<-lambda_aggregate_stats %>% arrange(Avg_RMSE) %>% head(5)    
+             
+lambda_top_rmse
+
+
+```
+
+```{r Lambda_Tuning_5, eval=TRUE}
+group_lambda_stats %>% filter(cases %in% lambda_top_rmse$cases) %>% ggplot(aes(cases,RMSE,group=cases)) + geom_boxplot()
+
+```
+
+```{r Retrain_Optimal_Lambdas}
+lambda_1<-lambda_top_10_rmse[which.min(lambda_top_rmse$Avg_RMSE),]$lambda_1
+lambda_2<-lambda_top_10_rmse[which.min(lambda_top_rmse$Avg_RMSE),]$lambda_2
+
+user_vector <-User_Vectoriser(edx_train_test$train)
+general_biases <- General_Biases(edx_train_test$train)
+user_classification  <- User_Classifier(edx_train_test$train,user_vector,
+                                              genres=genres,step_cutoff=step_cutoff,
+                                        cluster_n=cluster_n,cluster_type=cluster_type,
+                                        iterations=clustering_iterations)
+biases_by_group <- Group_Biases(edx_train_test$train,user_classification,lambda_1 = lambda_1,lambda_2 = lambda_2)
+results<-Rating_Predicter(edx_train_test$test,user_classification,biases_by_group,general_biases)
+
+stats <- tibble(RMSE = results$RMSE$overall,
+                         RMSE_1=results$RMSE$`1`,RMSE_2=results$RMSE$`2`,RMSE_3=results$RMSE$`3`,
+                         method_1=results$distribution_percentage$`1`,method_2=results$distribution_percentage$`2`,
+                         method_3=results$distribution_percentage$`3`)
+optimal_lambdas <- stats
+results_test <- results
+rm(results,stats)
+```
+
+```{r Assess_Test_Set, eval=TRUE }
+
+### Get RMSE with training set.
+
+optimal_lambdas
+          
+```
+
+
+```{r Analysis_1, eval=TRUE}
+### Analyse test results, comments
+
+results_test$prediction %>% filter(method==2) %>% group_by(title) %>% summarise(n=n()) %>% arrange(-n)
+```
+
+# Results
+<!-- a results section that presents the modeling results and discusses the model performance -->
+
+
+
+
+```{r Validation_Prediction}
+#Prediction Time
+
+##re-join training set and revalidate
+
+edx <- rbind(edx_train_test$train,edx_train_test$test)
+
+### Retrain user groups, biases
+
+
+user_vector_prediction <-User_Vectoriser(edx)
+general_biases_prediction <- General_Biases(edx)
+user_classification_prediction  <- User_Classifier(edx,user_vector_prediction,
+                                              genres=genres,step_cutoff=step_cutoff,
+                                        cluster_n=cluster_n,cluster_type=cluster_type,
+                                        iterations=clustering_iterations)
+biases_by_group_prediction <- Group_Biases(edx,user_classification_prediction,lambda_1=lambda_1,lambda_2=lambda_2)
+
+### tidy up validation table
+validation<-Tidy_Up(validation)
+
+
+prediction <- Rating_Predicter(validation,user_classification_prediction,biases_by_group_prediction,general_biases_prediction)
+
+
+##show stats for prediction
+
+stats <- tibble(RMSE = double(),RMSE_1 = double(),RMSE_2 = double(),RMSE_3 = double(),method_1=double(),method_2=double(),method_3=double())
+
+stats <- tibble(RMSE = prediction$RMSE$overall,
+                         RMSE_1=prediction$RMSE$`1`,RMSE_2=prediction$RMSE$`2`,RMSE_3=prediction$RMSE$`3`,
+                         method_1=prediction$distribution_percentage$`1`,method_2=prediction$distribution_percentage$`2`,
+                         method_3=prediction$distribution_percentage$`3`)
+prediction_stats <-stats
+
+rm("stats")         
+```
+
+```{r Prediction_Stats, eval=TRUE}
+prediction_stats
+```
+
+
+
+```{r Validation_Prediction_Analysis,eval=TRUE}
+
+movies_method_2_summary<- prediction$prediction %>% group_by(title) %>% summarise(n_total=n())
+
+movies_method_2_summary <- prediction$prediction %>% filter(method==2) %>% group_by(title) %>% summarise(n_2=n()) %>% left_join(movies_method_all,by="title") 
+
+movies_method_2_summary%>% group_by(n_total,n_2) %>% summarise(n_films=n()) %>% ggplot(aes(x=n_2,y=log(n_total,10),size=n_films))+geom_point()
+
+movies_method_2_summary %>% arrange(-n_total) %>% top_n(10) %>% kable() %>%  kable_styling(bootstrap_options = "striped", full_width = F)
+
+```
+
+# Conclusion
+<!-- a conclusion section that gives a brief summary of the report, its limitations and future work -->
+
