@@ -13,6 +13,7 @@ linkcolor: blue
 geometry: margin=1in
 mainfont: Arial
 fontsize: 11pt
+always_allow_html: true
 ---
 
 ```{r, setup, include=FALSE}
@@ -23,7 +24,7 @@ fontsize: 11pt
 knitr::opts_chunk$set(echo=FALSE,eval=FALSE,message=FALSE, warning=FALSE,tidy=TRUE,fig.align="center")
 
 # Load environment with saved dataset for faster knitting - comment if you want to run the notebook from scratch
-# you can download the file from https://drive.google.com/open?id=1mvFdnoXNTD95Y4GHnYg1HhAStowl4ppT
+# you can download the file from https://drive.google.com/open?id=1yrZ4zMqOIawRjUuLXcJz10YcBM8NnSiS
 
 load("movielens.RData") 
 
@@ -39,8 +40,10 @@ if(!require(ClusterR)) install.packages("ClusterR", repos = "http://cran.us.r-pr
 if(!require(kableExtra)) install.packages("kableExtra", repos = "http://cran.us.r-project.org")
 if(!require(DiagrammeR)) install.packages("DiagrammeR", repos = "http://cran.us.r-project.org")
 if(!require(formatR)) install.packages("formatR", repos = "http://cran.us.r-project.org")
+if(!require(gridExtra)) install.packages("gridExtra", repos = "http://cran.us.r-project.org")
 
-
+knitr::knit_hooks$set(inline = function(x) { if(!is.numeric(x)){ x }else{ prettyNum(round(x,3), big.mark=" ") } })
+target_rmse <- 0.86490
 
 ```
 
@@ -72,7 +75,7 @@ The data used in this excercise comes from  the [Movielens 10M Dataset](https://
 colnames(edx)
 ```
 
-The goal of this project is to generate a model that can predict a particular movie rating for each user, as close as possible to the actual rating given to each film. In order to assess the model performance, the **Root Square Mean Error (RMSE)** will be calculated for a validation dataset. Training and validation dataset are generated using the code provided in the assignment instructions. In order to aim for a full mark, this report will target for a RMSE lower than **0.86490**.
+The goal of this project is to generate a model that can predict a particular movie rating for each user, as close as possible to the actual rating given to each film. In order to assess the model performance, the **Root Square Mean Error (RMSE)** will be calculated for a validation dataset. Training and validation dataset are generated using the code provided in the assignment instructions. In order to aim for a full mark, this report will target for a RMSE lower than **`r sprintf("%3.5f", target_rmse)`**.
 
 The starting point of this project is the model presented in section [33.7 of the course's textbook](https://rafalab.github.io/dsbook/large-datasets.html#recommendation-systems). From there, the following steps are presented:
 
@@ -82,11 +85,13 @@ The starting point of this project is the model presented in section [33.7 of th
 4. Evaluation against validation dataset.
 5. Conclusion.
 
-The following sections present the above in detail.
+The following sections present the above points in  further detail.
 
+\newpage
 # Methods and Analysis
 <!-- methods/analysis section that explains the process and techniques used, including data cleaning, data exploration and visualization, insights gained, and your modeling approach -->
 
+## Preparing the data
 As mentioned in the introduction, this reports starts with the model presented in the textbook and then explore options to improve segmenting the users. However before conducting any modelling, the data needs to be cleaned up a little bit and then split into training and testing set.
 
 In terms of data cleaning, three operations have been considered, namely:
@@ -117,17 +122,218 @@ Below, this is a sample of the generated training set (*edx_train_test$train*).
 edx_train_test$train[1:10,] %>% kable(caption="Training Dataset - Sample",format = "latex", booktabs = TRUE) %>%  kable_styling(latex_options = c("hold_position","scale_down"))
 ```
 
+## Textbook Model
 
 Once completed data cleaning and split, the first step is to implement the model presented in the textbook and asses it's results. This model estimates rating by assuming that a particular rating from a particular user can be calculated as a deviation (bias) from the average rating for all movies (the *true* rating). In order to account for cases where movies and users don't have many reviews against them, weighting parametres have been added. This can be expressed by the below equation:
 
-$$\large{predicted rating =  \hat{\mu} + b_i + b_u}$$
+$$\large{predicted \ rating =  \hat{\mu} + b_i + b_u}$$
 
 where $\hat(\mu)$ is the average rating for all movies in the dataset, and $b_i$ and $b_u$ being the movie bias and user bias (respectively), defined as follows:
 
-$$b_i = (1)\overset{n}{\underset{j=1}{\Sigma}} ( \hat{\mu} - rating_j)$$
+$$b_i = \frac{1}{\lambda_1 + m}\sum_{j=1}^{m} (rating_j - \hat{\mu})$$
+$$b_u = \frac{1}{\lambda_2 + n}\sum_{j=1}^{n} (rating_j - \hat{\mu} - b_{i,j})$$
+
+where
+* $rating_j$ :a particular movie rating 
+* $m$ : the number of all ratings for a particular movie
+* $n$ : the total number of ratings submitted from a particular user (one rating per movie).
+* $ b_{i,j}$ : the *movie bias* for a particular movie
+* $\lambda_1$ :  weighting parametre for *movie biases*.
+* $\lambda_2$ :  weighting paramete for *user biases*.
 
 
-```{r Flowchart_examples}
+The calculation of these parametres has been written into the function *General_Biases*. Then, these results are used to create the first set of predictions, setting the tuning parametres to zero. The results are evaluated using the provided *RMSE* function.
+
+```{r Calculate_Biases, echo=TRUE, eval=TRUE}
+# create biases
+
+general_biases <- General_Biases(edx_train_test$train)
+
+# join with dataset and predict
+
+data_set <- edx_train_test$test  %>%
+  left_join(general_biases$movie_avgs, by = "movieId") %>%
+  left_join(general_biases$user_avgs, by = "userId")
+
+first_prediction <- data_set %>%
+    mutate(predicted_rating = general_biases$mu_hat + b_i + b_u, error = rating - predicted_rating)%>%
+    filter(!(predicted_rating == general_biases$mu_hat))
+
+# Calculate RMSE and put it in comparison table
+rmse_value <- RMSE(first_prediction$rating,first_prediction$predicted_rating)
+compare_RMSE <- tibble(Model=character(),RMSE = double(),
+                       "Below Target"=logical())
+compare_RMSE <- add_row(compare_RMSE,
+                        Model="Textbook",
+                        RMSE=rmse_value,
+                        "Below Target"=(rmse_value<target_rmse))
+
+# clean up 
+general_biases_first <- general_biases
+rm(first_prediction,data_set,rmse_value)
+```
+
+```{r first_Prediction, eval=TRUE}
+
+compare_RMSE %>% kable(caption="First Prediction",format = "latex", booktabs = TRUE) %>%  kable_styling(latex_options = c("hold_position"),position = "center")
+```
+
+As expected, the RMSE is higher than the target value. After thinking about the possible causes of this, part of this may be related to the fact that this model is based on averages. Although this  is not necessarily a bad approach and works for many cases, it also has some limitations, namely:
+
+* it won't perfom well with *divisive* movies. For example a niche film will obtain 5 stars from the fans, but will be many users which will disklike. This won't be reflected by an average bias (and the user bias may not necessarily compensate this).
+* There will be users with extrem ratings (i.e. who like family movies and dislike horror films). The user bias won't reflect this.
+* Already mentioned in the textbook, when the number of reviews for a user or a film is low , this model won't predict accurately.
+
+Taking this into account, the *General_Biases* function also calculates the standard deviation of the movie and user biases (named *s_i* and *s_u* respectively). The below charts show their results
+
+```{r Movie_Biases, eval=TRUE}
+ general_biases_first$movie_avgs %>% filter(!is.na(s_i)) %>%
+  mutate(s_i=round(s_i,5)) %>% ggplot(aes(s_i)) +
+  geom_histogram(binwidth=0.01,color='navy',fill='navy') +
+  geom_vline(xintercept=1, linetype="dashed", color = "red",size=0.8) + theme_grey()+
+  labs(title="Movie biases deviations",x="s_i", y = "Movies")
+```
+
+```{r User_Biases, eval=TRUE}
+ general_biases_first$user_avgs %>% filter(!is.na(s_u)) %>%
+  mutate(s_u=round(s_u,5)) %>% ggplot(aes(s_u)) +
+  geom_histogram(binwidth=0.01,color='navy',fill='navy') +
+  geom_vline(xintercept=1, linetype="dashed", color = "red",size=0.8) + theme_grey() +
+  labs(title="User biases deviations",x="s_u", y = "Movies")
+```
+
+As shown, there is a significant percentage of movie (`r round(mean(general_biases_first$movie_avgs %>% filter(!is.na(s_i)) %>% .$s_i >=1)*100,2)` %) and user (`r  round(mean(general_biases_first$user_avgs %>% filter(!is.na(s_u)) %>% .$s_u >=1)*100,2)` %) biases equal or larger than 1. This means there will be many cases where this model with values contributing to a larger RMSE. Although movies/user with lower number of reviews have higher deviations, this is not always the case, as illustrated in the below graph.
+
+```{r deviations_per_reviews, eval=TRUE}
+general_biases_first$movie_avgs %>% filter(!is.na(s_i)) %>% mutate(s_i=round(s_i,3)) %>% group_by(n_i,s_i) %>%
+  summarise(size_i=n()) %>%
+  ggplot(aes(x=n_i,y=s_i,size=size_i)) + geom_point(color='navy',fill='navy') +  
+  labs(title="Deviation per number of reviews",x="Reviews per movie", y = "s_i", size="Number of movies") + 
+  geom_hline(yintercept=1, linetype="dashed", color = "red",size=0.8) +
+  theme_grey() + scale_x_continuous(trans='log10') 
+```
+
+Perhaps, a way to illustrate this is to look at two films with similar number of reviews and average rating (and close $b_i$) but different standard deviations for their ratings.
+
+```{r Deviation Comparison,eval=TRUE}
+
+# Romeo + Juliet
+selected_reviews_1<- edx_train_test$train %>% filter(movieId==1059) 
+selected_title_1 <- unique(selected_reviews_1$title)
+selected_1 <- selected_reviews_1%>%  ggplot(aes(rating))  + geom_histogram(bins = 10,color='navy',fill='navy') +  labs(title=selected_title_1,x="Rating", y = "Reviews")  + theme_grey()
+
+# The Bourne Supremacy
+selected_reviews_2<- edx_train_test$train %>% filter(movieId==8665) 
+selected_title_2 <- unique(selected_reviews_2$title)
+selected_2 <- selected_reviews_2%>%  ggplot(aes(rating))  + geom_histogram(bins = 10,color='navy',fill='navy') +  labs(title=selected_title_2,x="Rating", y = "Reviews")  + theme_grey()
+
+#plot
+grid.arrange(selected_1, selected_2, nrow=2)
+
+#cleanup
+rm(selected_reviews_1,selected_title_1,selected_1,selected_reviews_2,selected_title_2,selected_2)
+
+common_users <- nrow(edx_train_test$train %>% filter(movieId %in% c(8665,1059)) %>%  select(userId) %>% unique())
+```
+
+Looking at the charts above, it looks like *Romeo+Juliet* has a wider range of opinions, compared to a more concentrated range of ratings in the case of the *Bourne Supremacy*, which in turns means the model won't be as effective, especially for the `r common_users` users who have rated both films and may be in all sections of liking/disliking this particular combination of films, which is not captured in the existing model.
+
+## An Improved Model : User Clustering
+
+All the previous observations notwithstanding, it is still worth pointing that the above model has merit, given its relative simplicity and ease to calculate. In addition, in the textbook, this model shows a good performance with a dataset considerably smaller than 8+ million observations.
+
+Perhaps, 8 million reviews is indeed a large number of reviews and it is possible to generate ratings based on smaller groups. This gives the opportunity to segment the data into smaller groups, where deviations are smaller and therefore have  a lower prediction error.
+
+One approach is to cluster the users according their similar movie tastes (i.e split the ones who like Shakespearean romances from the fans of action thrillers). The way used in this report classify the users based on the genres of the films they have rated.
+
+```{r Create_User_Vector}
+user_vector <-User_Vectoriser(edx_train_test$train)
+```
+
+As mentioned before, each film has a set of genres they belong (from one to many). Collectively, there are `r nrow(user_vector$genres)` genres, listed below.
+
+```{r genres_list, eval=TRUE}
+user_vector$genres %>% kable(caption="Genres in training set, ordered by ocurrences",format = "latex", booktabs = TRUE,format.args = list(decimal.mark = '.', big.mark = " ")) %>%  kable_styling(latex_options = c("HOLD_position"))
+```
+
+In order to profile each user, this report has used the genre in two ways:
+
+* The average rating each user gives to each genre, for each film rated (i.e. how much each user likes each genre).
+* The percentage of each genre compared to the overall reviews per user (i.e. how much each user watches each genre).
+
+This will result in a *user_vector*, profiling each user in the training set. This algorithm, has been written int the *User_Vectoriser* function, present in the attached R file. The below table shows a sample of the user vectors created by this code.
+
+```{r User_Vector_Sample_1, eval=TRUE}
+
+user_vector$user_averages[1:10,] %>% mutate_if(is.numeric, format, digits=4,nsmall = 0) %>%
+  kable(caption="User Vectors - Averages",format = "latex", booktabs = TRUE) %>%
+  kable_styling(latex_options = c("HOLD_position","scale_down"))
+```
+```{r User_Vector_Sample_2, eval=TRUE}
+user_vector$user_weights[1:10,]  %>% mutate_if(is.numeric, format, digits=4,nsmall = 0) %>%
+  kable(caption="User Vectors - Percentages",format = "latex", booktabs = TRUE) %>% 
+  kable_styling(latex_options = c("HOLD_position","scale_down"))
+```
+
+
+The average number of genres per user is `r mean(rowSums(user_vector$user_weights[,2:ncol(user_vector$user_weights)]>0))`. 
+
+```{r Genres_per_USer, eval=TRUE}
+tibble(genres=rowSums(user_vector$user_weights[,2:ncol(user_vector$user_weights)]>0)) %>% 
+  ggplot(aes(genres)) +
+  geom_histogram(bins=20,color='navy',fill='navy') + theme_grey() +
+  labs(title="Distribution of Number of Genres per User",x="Genres", y = "Users")
+
+```
+
+
+Using these vectors, it is possible to use existing clustering algorithms such as k-means (presented in [section 34 of the textbook](https://rafalab.github.io/dsbook/clustering.html)). However after an initial test, **Gaussian Mixture Model clustering** was chosen instead. [This link]((https://towardsdatascience.com/gaussian-mixture-models-d13a5e915c8e) offers and explanation of the algorithm and why can be a better method for to account variances in this particular case. In this excercise, the GMM implementation the [**ClusterR**](https://cran.r-project.org/web/packages/ClusterR/ClusterR.pdf) package is used. The code below shows a sample of how GMM is used in this project.
+
+
+```{r GMM sample,echo=TRUE}
+#First we need to combine weights and averages, and remove the first columns
+user_profiles <- user_vector$user_averages] %>%
+      left_join(user_vector$user_weights, by = "userId")
+us <- user_profiles %>% select(-userId) 
+
+## Then we need to specified the number of clusters we want the users to be classified into,eg 5
+cluster_n <- 5
+
+###The, we run GMM as per the manual
+fit <- GMM(us, cluster_n, dist_mode = "maha_dist", 
+           seed_mode = "random_subset", km_iter = 10,
+           em_iter = 10, verbose = F)
+
+pr <- predict_GMM(us, fit$centroids, fit$covariance_matrices, fit$weights)
+user_profiles$group <- pr$cluster_labels
+
+###Show user profiles
+
+user_profiles
+```
+
+Before running the above code, it is worthing noticing that:
+
+* The combined averages and weights vectors have 40 dimensions, which is large. In addition, most of these vector don't have a presence across all these dimensions (in this particular training set, none has). Potentially there are some vector without any common dimensions (action&adventure fans opposite documentaries&film-noir followers).
+* Although no analysis has been done, it is reasonable to assume that some genres have a big overlap, thus not all dimensions are independent from each other.
+* There will be a significant number of vectors(users) defined by the most popular dimensions (genres).
+* Taking this into account, using all dimensions may not be the best method of clustering - and it is interesting to assess how this impacts the RMSE.
+* In addition, the number of clusters  - which will certainly have an impact on the RMSE - is an input parametre.
+
+Considering all the points above and after some initial tests, this document proposes a clustering algorithm based on GMM which follows the below steps:
+
+1. User vector is created.
+2. The number of genres used for clustering (*n*) is set.
+3. Using the genre percentages, the relative weight of the *n* most popular genres is calculated.
+4. The user vector is filtered to only keep the cases where the previously calculated relative weight meets/exceeds a treshold; This filters out the users for which the selected genres are not relevant.
+5. The filtered vector is fed into the GMM functions and users are group into an initial set of clusters.
+6. The remaining users are sorted, and filtered by their *n* most popular genres. Again, they are filtered by the predifined treshold and fit into a new set of clusters.
+7. Step 6 repeated as many times as desired or until there are either no users left or there is no enough data to cluster them.
+8. All remaining users (if any) and classified in a residual group.
+
+The below chart present a flow diagramme for this algorithm.
+
+```{r Clustering Flowchart, message=TRUE, include=FALSE}
 grViz("digraph flowchart {
       # node definitions with substituted label text
       node [fontname = Helvetica, shape = rectangle]        
@@ -136,75 +342,136 @@ grViz("digraph flowchart {
       tab3 [label = '@@3']
       tab4 [label = '@@4']
       tab5 [label = '@@5']
+      tab6 [label = '@@6']
+      tab7 [label = '@@7']
 
       # edge definitions with the node IDs
-      tab1 -> tab2;
-      tab2 -> tab3;
-      tab2 -> tab4 -> tab5
+      tab1 -> tab2 -> tab3 -> tab4 -> tab5 -> tab6 -> tab7;
+
       }
 
-      [1]: 'Questionnaire sent to n=1000 participants'
-      [2]: 'Participants came to clinic for evaluation n=700'
-      [3]: 'Participants non-eligible for the study n=100'
-      [4]: 'Participants eligible for the study n=600'
-      [5]: 'Study sample n=600'
+      [1]: 'Calculate user vectors'
+      [2]: 'Determine number of genres to use for clustering'
+      [3]: 'Determine threshold percentage for selected genres, filter eligible users'
+      [4]: 'Cluster filtered users'
+      [5]: 'Repeat process with leftover users, as many times as chosen'
+      [6]: 'Attempt to cluster remnant users, put rest in special group'
+      [7]: 'Consolidate and generate grouping'
+      
       ")
 ```
 
+This algorithm as been written into the **User_Classifier** function, available in the R file. It is worth noticiing this process has four *arbitrary* parametres that will change the number of resulting clusters and therefore the may have an impact on the RMSE - this will be discussed later in the document.
+
+Once the users have been segmented, it is possible to use the *textbook* model to calculate the average and biases for each of these groups and then predict ratings (the objective of this entire process!). The first part of this step is straightforward (just add the group to the dataset and use this parametre to group prior to summarising) and it has been written into a function called **Group_Biases**.
+
+However, for  predicting algorithm needs to consider that potentially some user weren't not grouped into a meaningful cluster and thus this method makes no sense. Additionally, there maybe situations where a particular (group,movie) was absent from the training data and this method is not valid. To cover those situations, the prediction algorithm needs to steps:
+
+1. A prediction method using group averages and biases for all qualifyng reviews - just like the textbook model but split per group.
+2. A *backstop* method for all reviews don't fit the above - for this we can use the 'textbook' method, which is better than just guessing.
+
+Please note that both segments have tuning parametres ($\lambda_{1-4}$).
+
+This prediction algorithm has been written into a function called **Rating_Predicter**.
+
+## Tuning Step 1 - Optimise Clustering.
+
+The first optimisation step consists in finding the optimal clustering parametres to minimise the RMSE. These parametres are:
+
+1. the number of genres (*genres*) to consider in each clustering round.
+2. the number of target clusters per round (*cluster_n*).
+3. the cutoff value to filter the users to feed into each clustering round (*cutoff*).
+4. the number of time clustering will be attempted (*iterations*).
 
 
-
-```{r First_Parametres}
-user_vector <-User_Vectoriser(edx_train_test$train)
-general_biases <- General_Biases(edx_train_test$train)
-
-```
+This process has been executed through the below code.
 
 
-```{r Cluster_Optimisation}
+```{r Cluster_Optimisation, echo=TRUE}
 
-stats <- tibble(clustering=character(),iterations=double(),cutoff=double(),genres=double(),cluster_n=double(),RMSE = double(),RMSE_1 = double(),RMSE_2 = double(),RMSE_3 = double(),method_1=double(),method_2=double(),method_3=double())
+#create tibble to record stats
+
+stats <- tibble(clustering=character(),iterations=double(),cutoff=double(),
+                genres=double(),cluster_n=double(),RMSE = double(),
+                RMSE_1 = double(),RMSE_2 = double(),
+                RMSE_3 = double(),
+                method_1=double(),method_2=double(),
+                method_3=double())
+
+#define ranges to iterate
 
 genres_n<-3:6
 cluster_n <- 3:6
-secondary_cutoff <- c(0.4,0.5,0.6)
+cutoff <- c(0.4,0.5,0.6)
 iterations <-2:4
 
 
+#iterate predictions
 for(g in iterations){
-  for(h in secondary_cutoff){
+  for(h in cutoff){
     for (i in genres_n){
       for(j in cluster_n){
  
+        #create groups, biases  and predict
+        
         user_classification  <- User_Classifier(edx_train_test$train,user_vector,
-                                                genres=i,step_cutoff=h,cluster_n=j,cluster_type="GMM",iterations=g)
+                                                genres=i,step_cutoff=h,cluster_n=j,
+                                                cluster_type="GMM",iterations=g)
+        
         biases_by_group <- Group_Biases(edx_train_test$train,user_classification)
-        results<-Rating_Predicter(edx_train_test$test,user_classification,biases_by_group,general_biases)
-        stats <- add_row(stats,clustering="GMM",iterations=g,cutoff=h,genres=i,cluster_n=j,RMSE = results$RMSE$overall,
-                         RMSE_1=results$RMSE$`1`,RMSE_2=results$RMSE$`2`,RMSE_3=results$RMSE$`3`,
-                         method_1=results$distribution_percentage$`1`,method_2=results$distribution_percentage$`2`,
+        
+        results<-Rating_Predicter(edx_train_test$test,user_classification,
+                                  biases_by_group,general_biases)
+        
+        # store results in stats tibble
+        stats <- add_row(stats,clustering="GMM",iterations=g,
+                         cutoff=h,genres=i,cluster_n=j,
+                         RMSE = results$RMSE$overall,
+                         RMSE_1=results$RMSE$`1`,RMSE_2=results$RMSE$`2`,
+                         RMSE_3=results$RMSE$`3`,
+                         method_1=results$distribution_percentage$`1`,
+                         method_2=results$distribution_percentage$`2`,
                          method_3=results$distribution_percentage$`3`)
      }
    }
  }
 }
-rm(g,h,i,j)
+#cleanup
+clustering_stats <- stats
+rm(g,h,i,j,results,stats)
 
 ```
 
+
+This code in turn produces the results represented in the below chart.
+
+```{r RMSE Graph, eval=TRUE, echo=FALSE, message=FALSE, warning=FALSE}
+clustering_stats%>% ggplot(aes(x=cluster_n,y=RMSE,color=genres)) + geom_point() + facet_grid(.~iterations) +theme(legend.position="bottom") +labs(title="Model tuning by iterations",x="Clusters per iteration", y = "RMSE")+ geom_hline(yintercept=min(clustering_stats$RMSE), linetype="dashed", color = "red",size=0.5) + theme_grey()
+```
+
+The optimal solution has the below parametre, which shows also the resulting overall RMSE plus the RMSE for the clustered (RMSE_1) and non-clusters (RMSE_2) groups, along with the proportion of reviews in each method.
 
 ```{r Clustering_Statistics, eval=TRUE, echo=FALSE, message=FALSE, warning=FALSE}
 
-clustering_stats[which.min(clustering_stats$RMSE),] %>% kable(caption="Optimal Clustering Parametres",format = "latex", booktabs = TRUE) %>%  kable_styling(latex_options = c("hold_position","scale_down"))
-#clustering_stats%>% ggplot(aes(x=genres,y=RMSE,color=cluster_n,shape=as.factor(iterations))) + geom_point()
-#clustering_stats%>% ggplot(aes(x=cluster_n,y=RMSE,color=genres,shape=as.factor(iterations))) + geom_point()
-#clustering_stats%>% ggplot(aes(x=iterations,y=RMSE,color=genres,shape=as.factor(cluster_n))) + geom_point()
-
+clustering_stats[which.min(clustering_stats$RMSE),] %>% 
+  select(-RMSE_3,method_3) %>%
+  kable(caption="Optimal Clustering Parametres",format = "latex", booktabs = TRUE) %>%  kable_styling(latex_options = c("hold_position","scale_down"))
 ```
 
+When compared with the *texbook* method, this procedure has better results:
 
-```{r RMSE Graph, eval=TRUE, echo=FALSE, message=FALSE, warning=FALSE}
-clustering_stats%>% ggplot(aes(x=cluster_n,y=RMSE,color=genres)) + geom_point() + facet_grid(.~iterations) +theme(legend.position="bottom") +labs(title="Model tunning, by iterations, number of genres and target clusters per iteration",x="Clusters per iteration", y = "RMSE")+ geom_hline(yintercept=min(clustering_stats$RMSE), linetype="dashed", color = "red",size=0.5) + theme_grey()
+```{r seond_Prediction, eval=TRUE}
+
+rmse_value <- min(clustering_stats$RMSE)
+
+compare_RMSE <- add_row(compare_RMSE,
+                        Model="Optimal Clusters",
+                        RMSE=rmse_value,
+                        "Below Target"=(rmse_value<target_rmse))
+
+compare_RMSE %>% kable(caption="First and Second Predictions",format = "latex", booktabs = TRUE) %>%  kable_styling(latex_options = c("hold_position"),position = "center")
+
+rm(rmse_value)
 ```
 
 
@@ -216,20 +483,51 @@ step_cutoff <- clustering_stats[which.min(clustering_stats$RMSE),]$cutoff
 clustering_iterations <- clustering_stats[which.min(clustering_stats$RMSE),]$iterations
 cluster_type <- "GMM"
 
-
 user_classification  <- User_Classifier(edx_train_test$train,user_vector,
                                               genres=genres,step_cutoff=step_cutoff,
                                         cluster_n=cluster_n,cluster_type=cluster_type,
                                         iterations=clustering_iterations)
 
- 
+```
+
+It is worth noticing this solution generates splits the training set into `r length(unique(user_classification$group))` groups of users, with the below characteristics:
+
+```{r}
+
+movieIds <- edx_train_test$train %>% 
+            group_by(movieId,title) %>% summarise(n=n()) %>% 
+            ungroup() %>% select(movieId,title)
+
+group_stats<-edx_train_test$train %>% left_join(user_classification, by="userId") %>% group_by(group) %>% summarise(users=length(unique(userId)),movies=length(unique(movieId)))
+
+
+
+most_popular_movies <- tibble(group=double(),movieId=double(),reviews=integer())
+
+for(i in group_stats$group){
+  temp <- paste(((edx_train_test$train %>% left_join(user_classification, by="userId") %>% group_by(group,movieId, title) %>% summarise(reviews=n()) %>% filter(group==1) %>% arrange(-reviews) %>% ungroup()%>% select(-movieId))[1:5,]  %>% spread(title, reviews) %>% select(-group) %>% colnames(.)),sep = ", ")
+  most_popular_movies <-rbind(most_popular_movies,temp)
+}
 ```
 
 
-```{r User_Classes, eval=TRUE}
-user_classification %>% group_by(group) %>% summarise(n=n())%>% ggplot(aes(x=as.factor(group),y=n)) +  geom_bar(stat="identity")
-user_classification %>% group_by(group) %>% summarise(n=n())
+```{r}
+
 ```
+
+
+```{r}
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+```
+
 
 
 ```{r Lambda_Tuning_1}
@@ -465,4 +763,26 @@ movies_method_2_summary %>% arrange(-n_total) %>% top_n(10) %>% kable() %>%  kab
 
 # Conclusion
 <!-- a conclusion section that gives a brief summary of the report, its limitations and future work -->
+
+
+```{r heatmap}
+
+group_vector_averages <-user_vector$user_averages %>% 
+  left_join(user_classification,by="userId") %>% select(-userId) %>%
+  gather("genre","value",-group) %>% group_by(group,genre) %>% summarise(value=mean(value))
+
+ ggplot(group_vector_averages, aes(as.factor(group), genre,fill=value)) + geom_tile() +  geom_tile() +
+  scale_fill_distiller(palette = "RdPu") 
+
+group_vector_weights <-user_vector$user_weights %>% 
+  left_join(user_classification,by="userId") %>% select(-userId) %>%
+  gather("genre","value",-group) %>% group_by(group,genre) %>% summarise(value=mean(value))
+
+ggplot(group_vector_weights, aes(as.factor(group), genre, fill=value)) + geom_tile() +  geom_tile() +
+  scale_fill_distiller(palette = "RdPu") 
+
+
+
+```
+
 
