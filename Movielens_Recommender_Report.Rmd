@@ -5,23 +5,25 @@ date: "`r format(Sys.time(), '%B %d, %Y')`"
 abstract: "Abstract"
 output:
   pdf_document:
-#    documentclass: article
     number_sections: yes
     toc: yes
     fig_caption: yes
+    includes:
+      in_header: header_includes.tex
+geometry: margin=1in,headheight=70pt,headsep=0.3in
 linkcolor: blue
-geometry: margin=1in
 mainfont: Arial
 fontsize: 11pt
 always_allow_html: true
 ---
+
 
 ```{r, setup, include=FALSE}
 #### WARNING : Running the notebook from scratch, may take SEVERAL HOURS - Run at your own time.####
 
 # Avoid to run time consuming analysis - comment if you want to run the notebook from scratch
 
-knitr::opts_chunk$set(echo=FALSE,eval=FALSE,message=FALSE, warning=FALSE,tidy=TRUE,fig.align="center")
+knitr::opts_chunk$set(echo=FALSE,eval=FALSE,message=FALSE, warning=FALSE,tidy=FALSE,fig.align="center")
 
 # Load environment with saved dataset for faster knitting - comment if you want to run the notebook from scratch
 # you can download the file from https://drive.google.com/open?id=1yrZ4zMqOIawRjUuLXcJz10YcBM8NnSiS
@@ -41,6 +43,8 @@ if(!require(kableExtra)) install.packages("kableExtra", repos = "http://cran.us.
 if(!require(DiagrammeR)) install.packages("DiagrammeR", repos = "http://cran.us.r-project.org")
 if(!require(formatR)) install.packages("formatR", repos = "http://cran.us.r-project.org")
 if(!require(gridExtra)) install.packages("gridExtra", repos = "http://cran.us.r-project.org")
+if(!require(wordcloud)) install.packages("wordcloud", repos = "http://cran.us.r-project.org")
+if(!require(RColorBrewer)) install.packages("RColorBrewer", repos = "http://cran.us.r-project.org")
 
 knitr::knit_hooks$set(inline = function(x) { if(!is.numeric(x)){ x }else{ prettyNum(round(x,3), big.mark=" ") } })
 target_rmse <- 0.86490
@@ -156,12 +160,15 @@ data_set <- edx_train_test$test  %>%
   left_join(general_biases$user_avgs, by = "userId")
 
 first_prediction <- data_set %>%
-    mutate(predicted_rating = general_biases$mu_hat + b_i + b_u, error = rating - predicted_rating)%>%
+    mutate(predicted_rating = general_biases$mu_hat +
+             b_i + b_u, error = rating - predicted_rating) %>%
     filter(!(predicted_rating == general_biases$mu_hat))
 
 # Calculate RMSE and put it in comparison table
-rmse_value <- RMSE(first_prediction$rating,first_prediction$predicted_rating)
-compare_RMSE <- tibble(Model=character(),RMSE = double(),
+rmse_value <- RMSE(first_prediction$rating,
+                   first_prediction$predicted_rating)
+compare_RMSE <- tibble(Model=character(),
+                       RMSE = double(),
                        "Below Target"=logical())
 compare_RMSE <- add_row(compare_RMSE,
                         Model="Textbook",
@@ -186,7 +193,7 @@ As expected, the RMSE is higher than the target value. After thinking about the 
 
 Taking this into account, the *General_Biases* function also calculates the standard deviation of the movie and user biases (named *s_i* and *s_u* respectively). The below charts show their results
 
-```{r Movie_Biases, eval=TRUE}
+```{r Movie_Biases_1, eval=TRUE}
  general_biases_first$movie_avgs %>% filter(!is.na(s_i)) %>%
   mutate(s_i=round(s_i,5)) %>% ggplot(aes(s_i)) +
   geom_histogram(binwidth=0.01,color='navy',fill='navy') +
@@ -287,12 +294,12 @@ tibble(genres=rowSums(user_vector$user_weights[,2:ncol(user_vector$user_weights)
 ```
 
 
-Using these vectors, it is possible to use existing clustering algorithms such as k-means (presented in [section 34 of the textbook](https://rafalab.github.io/dsbook/clustering.html)). However after an initial test, **Gaussian Mixture Model clustering** was chosen instead. [This link]((https://towardsdatascience.com/gaussian-mixture-models-d13a5e915c8e) offers and explanation of the algorithm and why can be a better method for to account variances in this particular case. In this excercise, the GMM implementation the [**ClusterR**](https://cran.r-project.org/web/packages/ClusterR/ClusterR.pdf) package is used. The code below shows a sample of how GMM is used in this project.
+Using these vectors, it is possible to use existing clustering algorithms such as k-means (presented in [section 34 of the textbook](https://rafalab.github.io/dsbook/clustering.html)). However after an initial test, **Gaussian Mixture Model clustering** was chosen instead. [This link](https://towardsdatascience.com/gaussian-mixture-models-d13a5e915c8e) offers and explanation of the algorithm and why can be a better method for to account variances in this particular case. In this excercise, the GMM implementation the [**ClusterR**](https://cran.r-project.org/web/packages/ClusterR/ClusterR.pdf) package is used. The code below shows a sample of how GMM is used in this project.
 
 
 ```{r GMM sample,echo=TRUE}
 #First we need to combine weights and averages, and remove the first columns
-user_profiles <- user_vector$user_averages] %>%
+user_profiles <- user_vector$user_averages %>%
       left_join(user_vector$user_weights, by = "userId")
 us <- user_profiles %>% select(-userId) 
 
@@ -312,7 +319,7 @@ user_profiles$group <- pr$cluster_labels
 user_profiles
 ```
 
-Before running the above code, it is worthing noticing that:
+Before running the above code, it is worth noticing that:
 
 * The combined averages and weights vectors have 40 dimensions, which is large. In addition, most of these vector don't have a presence across all these dimensions (in this particular training set, none has). Potentially there are some vector without any common dimensions (action&adventure fans opposite documentaries&film-noir followers).
 * Although no analysis has been done, it is reasonable to assume that some genres have a big overlap, thus not all dimensions are independent from each other.
@@ -331,7 +338,7 @@ Considering all the points above and after some initial tests, this document pro
 7. Step 6 repeated as many times as desired or until there are either no users left or there is no enough data to cluster them.
 8. All remaining users (if any) and classified in a residual group.
 
-The below chart present a flow diagramme for this algorithm.
+<!-- The below chart present a flow diagramme for this algorithm. -->
 
 ```{r Clustering Flowchart, message=TRUE, include=FALSE}
 grViz("digraph flowchart {
@@ -383,9 +390,7 @@ The first optimisation step consists in finding the optimal clustering parametre
 3. the cutoff value to filter the users to feed into each clustering round (*cutoff*).
 4. the number of time clustering will be attempted (*iterations*).
 
-
 This process has been executed through the below code.
-
 
 ```{r Cluster_Optimisation, echo=TRUE}
 
@@ -442,11 +447,10 @@ rm(g,h,i,j,results,stats)
 
 ```
 
-
 This code in turn produces the results represented in the below chart.
 
 ```{r RMSE Graph, eval=TRUE, echo=FALSE, message=FALSE, warning=FALSE}
-clustering_stats%>% ggplot(aes(x=cluster_n,y=RMSE,color=genres)) + geom_point() + facet_grid(.~iterations) +theme(legend.position="bottom") +labs(title="Model tuning by iterations",x="Clusters per iteration", y = "RMSE")+ geom_hline(yintercept=min(clustering_stats$RMSE), linetype="dashed", color = "red",size=0.5) + theme_grey()
+clustering_stats%>% ggplot(aes(x=cluster_n,y=RMSE,color=genres)) + geom_point() + facet_grid(.~iterations) +theme(legend.position="bottom") + labs(title="Model tuning by iterations",x="Clusters per iteration", y = "RMSE")+ geom_hline(yintercept=min(clustering_stats$RMSE), linetype="dashed", color = "red",size=0.5) + theme_grey()
 ```
 
 The optimal solution has the below parametre, which shows also the resulting overall RMSE plus the RMSE for the clustered (RMSE_1) and non-clusters (RMSE_2) groups, along with the proportion of reviews in each method.
@@ -460,7 +464,7 @@ clustering_stats[which.min(clustering_stats$RMSE),] %>%
 
 When compared with the *texbook* method, this procedure has better results:
 
-```{r seond_Prediction, eval=TRUE}
+```{r second_Prediction, eval=TRUE}
 
 rmse_value <- min(clustering_stats$RMSE)
 
@@ -474,6 +478,28 @@ compare_RMSE %>% kable(caption="First and Second Predictions",format = "latex", 
 rm(rmse_value)
 ```
 
+What are reasons this method has a better performance? Some explanations are:
+
+* In this cases, there are different averages for different groups, having more accurate stating points.
+* Also, grouping provides movie biases with smaller deviations, contributing to a smaller RMSE. In this case,  `r mean((biases_by_group$movie_group_avgs %>% filter(!is.na(s_m)))$s_m<1)*100` % of the deviations are lower than 1, compared to `r mean((general_biases_first$movie_avgs %>% filter(!is.na(s_i)))$s_i<1)*100
+` % for the *textbook* case. This can be visualised in the below chart:
+
+```{r Movie_Biases_2, eval=TRUE}
+
+h1 <- general_biases_first$movie_avgs %>% filter(!is.na(s_i)) %>%
+  mutate(s=round(s_i,5),method="general") %>% select(s,method)
+h2 <- biases_by_group$movie_group_avgs %>% filter(!is.na(s_m)) %>%
+  mutate(s=round(s_m,5),method="clustering") %>% ungroup() %>% select(s,method)
+
+h <-as_tibble(rbind(h1,h2))
+
+ggplot(h,aes(x=s,y=stat(count / sum(count)))) + 
+    geom_histogram(data=subset(h,method == 'general'),fill = "red", alpha = 0.2, label="General") +
+    geom_histogram(data=subset(h,method == 'clustering'),fill = "blue", alpha = 0.4, label="Clustering") +
+  theme(legend.position="bottom") + labs(title="Movie Biases's Std. Dev. Compared",x="Bias Standard Dev.", y = "Density")+ geom_vline(xintercept=1, linetype="dashed", color = "red",size=0.5) 
+
+rm(h1,h2,h)
+```
 
 ```{r Optimal_Clusters}
 
@@ -492,45 +518,55 @@ user_classification  <- User_Classifier(edx_train_test$train,user_vector,
 
 It is worth noticing this solution generates splits the training set into `r length(unique(user_classification$group))` groups of users, with the below characteristics:
 
-```{r}
-
-movieIds <- edx_train_test$train %>% 
-            group_by(movieId,title) %>% summarise(n=n()) %>% 
-            ungroup() %>% select(movieId,title)
+```{r user_group_stats}
 
 group_stats<-edx_train_test$train %>% left_join(user_classification, by="userId") %>% group_by(group) %>% summarise(users=length(unique(userId)),movies=length(unique(movieId)))
+group_stats
 
+most_popular_movies <- tibble(group=double(),top_movies=character())
 
-
-most_popular_movies <- tibble(group=double(),movieId=double(),reviews=integer())
-
-for(i in group_stats$group){
-  temp <- paste(((edx_train_test$train %>% left_join(user_classification, by="userId") %>% group_by(group,movieId, title) %>% summarise(reviews=n()) %>% filter(group==1) %>% arrange(-reviews) %>% ungroup()%>% select(-movieId))[1:5,]  %>% spread(title, reviews) %>% select(-group) %>% colnames(.)),sep = ", ")
-  most_popular_movies <-rbind(most_popular_movies,temp)
+for(i in as.vector(group_stats$group)){
+  temp <- (edx_train_test$train %>% left_join(user_classification, by="userId") %>%
+             group_by(group,movieId, title) %>% summarise(reviews=n()) %>% filter(group==i) %>%
+             arrange(-reviews) %>% ungroup()%>% select(-movieId))[1:5,]  %>%
+             spread(title, reviews) %>% select(-group) %>% colnames(.)
+  temp <- paste(temp, collapse = '\n ')
+  most_popular_movies<-add_row(most_popular_movies,group=i,top_movies=temp)
 }
+
+user_groups_stats <- group_stats %>% left_join(most_popular_movies, by="group")
+
+rm(temp, most_popular_movies, group_stats)
 ```
 
-
-```{r}
-
-```
-
-
-```{r}
-```
-
-
-```{r}
+```{r stats_table, eval=TRUE}
+user_groups_stats %>% kable(caption="Optimal User Groups",format = "latex", booktabs = TRUE) %>%  kable_styling(latex_options = c("HOLD_position","scale_down"))
 
 ```
 
+Looking at this and the compared deviation histogram's, it looks like there are groups that maybe quite similar  and there improvement in accuracy seems smaller, yet the result improves. Although not covered in there report, perhaps exploring better clustering mechanisms will deliver significantly improved results.
 
-```{r}
-```
+## Tuning $\lambda$ parametres
 
+Having settled on a set of optimal clustering parametres, there is stil room to attempt improving the RMSE but tuning the $\lambda$ parametres in the movie and user bias equations:
 
+$$b_i = \frac{1}{\lambda_1 + m}\sum_{j=1}^{m} (rating_j - \hat{\mu})$$
+$$b_u = \frac{1}{\lambda_2 + n}\sum_{j=1}^{n} (rating_j - \hat{\mu} - b_{i,j})$$
 
-```{r Lambda_Tuning_1}
+In the proposed model, the are four lambda parametres: two for the clustering biases (from now on, $\lambda_1$ and $\lambda_2$) and two for the backstop model ($\lambda_3$ and $\lambda_4$). However, given the previous result shows that over 99% of the dataset fit in the cluster method, thus no tuning of ($\lambda_3$ and $\lambda_4$) will be done at this stage.
+
+In addition, at this stage it would be good to see how much the RMSE naturally varies due to being a random variable - in order to have a level of confidence how well the method will perform against the validation set. For these two reasons, k-fold cross validation will be also done at this point.
+
+There is one problem with the method : since there are three variables to tune and each iteration requires data partition, user clustering, calculating biases and predictions. As experienced in the previous optimisation, this will take **several** hours to complete. As a workaround, tuning will proceed the following way:
+
+1. First, we will run iterations to run $lambda_1$ and $lambda_2$.
+3. From this first set, we will choose the twenty combinations with the lowest RMSE.
+4. Then, we will run k-fold validation for those twenty combinations.
+5. Finally, the optimal set of $lambda_1$ and $lambda_2$ will be chosen picking the lowest average RMSE (from all k iterations).
+
+The first iteration will be implemented with the below code:
+
+```{r Lambda_Tuning_1, echo=TRUE}
 
 stats <- tibble(k=double(),lambda_1=double(),lambda_2=double(),
                 RMSE = double(),RMSE_1 = double(),RMSE_2 = double(),
@@ -557,14 +593,21 @@ for(k in 1:1){
     for(j in lambda_2){
 
               
-              biases_by_group <- Group_Biases(edx_cross_validation$train,user_classification,lambda_1=i,lambda_2=j)
+              biases_by_group<-Group_Biases(edx_cross_validation$train,
+                                            user_classification,
+                                            lambda_1=i,lambda_2=j)
            
-              results<-Rating_Predicter(edx_cross_validation$test,user_classification,biases_by_group,general_biases)
+              results<-Rating_Predicter(edx_cross_validation$test,
+                                        user_classification,
+                                        biases_by_group,general_biases)
               
               stats <- add_row(stats, k=k, lambda_1=i,lambda_2=j,
                                RMSE = results$RMSE$overall,
-                         RMSE_1=results$RMSE$`1`,RMSE_2=results$RMSE$`2`,RMSE_3=results$RMSE$`3`,
-                         method_1=results$distribution_percentage$`1`,method_2=results$distribution_percentage$`2`,
+                         RMSE_1=results$RMSE$`1`,
+                         RMSE_2=results$RMSE$`2`,
+                         RMSE_3=results$RMSE$`3`,
+                         method_1=results$distribution_percentage$`1`,
+                         method_2=results$distribution_percentage$`2`,
                          method_3=results$distribution_percentage$`3`)
   }
   }
@@ -577,7 +620,7 @@ group_lambda_stats_1 <- stats
 rm(i,j,k)
 ```
 
-
+The 20 lowest RMSE combinations are presented in the below table:
 
 ```{r Lambda_Tuning_2,eval=TRUE}
 
@@ -589,11 +632,14 @@ group_lambda_stats_1<- unique(group_lambda_stats_1)
 lambda_top_20_rmse_1<-group_lambda_stats_1 %>% arrange(RMSE) %>% head(cases)    
 lambda_top_20_rmse_1$cases <- seq.int(nrow(lambda_top_20_rmse_1))
 
-lambda_top_20_rmse_1
+lambda_top_20_rmse_1 %>% select(-k,-RMSE_3,-method_3,-cases) %>%
+  kable(caption="Lambda Optimisation - Step 1",format = "latex", booktabs = TRUE) %>%
+  kable_styling(latex_options = c("HOLD_position","scale_down"))
 
-rm("group_lambda_stats_1")
+
 ```
 
+Then, using a modified version of the previous code, 5 more iterations of those 20 sets of $lambdas$ are generated and average RMSEs are calculated. The best 5 results are presented in the below table.
 
 ```{r Lambda_Tuning_3}
 
@@ -602,8 +648,10 @@ stats <- tibble(k=double(), cases=double(),lambda_1=double(),lambda_2=double(),
                 RMSE_3 =double(),
                 method_1=double(),method_2=double(),method_3=double())
 
+lambda_1 <- seq(0,8,0.5)
+lambda_2 <- seq(0,8,0.5)
 
-for(k in 2:6){
+for(k in 1:6){
 
   edx_cross_validation <- Train_Test(edx_train_test$train)
               
@@ -648,23 +696,21 @@ rm(i,j,k)
 group_lambda_stats <-rbind(group_lambda_stats,lambda_top_20_rmse_1)
 group_lambda_stats<- unique(group_lambda_stats)
 
-lambda_aggregate_stats<-group_lambda_stats %>% group_by(k,lambda_1,lambda_2) %>% summarise(Avg_RMSE=mean(RMSE),Avg_Method_1=mean(method_1))
+lambda_aggregate_stats<- group_lambda_stats %>% group_by(cases,lambda_1,lambda_2) %>% summarise(Avg_RMSE=mean(RMSE)) %>%ungroup()
 
 lambda_top_rmse<-lambda_aggregate_stats %>% arrange(Avg_RMSE) %>% head(5)    
              
-lambda_top_rmse
-
-
-```
-
-```{r Lambda_Tuning_5, eval=TRUE}
-group_lambda_stats %>% filter(cases %in% lambda_top_rmse$cases) %>% ggplot(aes(cases,RMSE,group=cases)) + geom_boxplot()
+lambda_top_rmse  %>% select(-cases) %>%
+  kable(caption="Lambda Optisimation - Step 2",format = "latex", booktabs = TRUE) %>%
+  kable_styling(latex_options = c("HOLD_position"))
 
 ```
+
+Using these parametres, the model is retrained using the whole training set and RMSE is calculated against the test set for comparison with the previous two cases.
 
 ```{r Retrain_Optimal_Lambdas}
-lambda_1<-lambda_top_10_rmse[which.min(lambda_top_rmse$Avg_RMSE),]$lambda_1
-lambda_2<-lambda_top_10_rmse[which.min(lambda_top_rmse$Avg_RMSE),]$lambda_2
+lambda_1<-lambda_top_rmse[which.min(lambda_top_rmse$Avg_RMSE),]$lambda_1
+lambda_2<-lambda_top_rmse[which.min(lambda_top_rmse$Avg_RMSE),]$lambda_2
 
 user_vector <-User_Vectoriser(edx_train_test$train)
 general_biases <- General_Biases(edx_train_test$train)
@@ -675,10 +721,14 @@ user_classification  <- User_Classifier(edx_train_test$train,user_vector,
 biases_by_group <- Group_Biases(edx_train_test$train,user_classification,lambda_1 = lambda_1,lambda_2 = lambda_2)
 results<-Rating_Predicter(edx_train_test$test,user_classification,biases_by_group,general_biases)
 
-stats <- tibble(RMSE = results$RMSE$overall,
-                         RMSE_1=results$RMSE$`1`,RMSE_2=results$RMSE$`2`,RMSE_3=results$RMSE$`3`,
-                         method_1=results$distribution_percentage$`1`,method_2=results$distribution_percentage$`2`,
-                         method_3=results$distribution_percentage$`3`)
+stats <- tibble(lambda_1=lambda_1,
+                lambda_2=lambda_2,
+                RMSE = results$RMSE$overall,
+                RMSE_1=results$RMSE$`1`,
+                RMSE_2=results$RMSE$`2`,
+                method_1=results$distribution_percentage$`1`,
+                method_2=results$distribution_percentage$`2`)
+
 optimal_lambdas <- stats
 results_test <- results
 rm(results,stats)
@@ -686,34 +736,67 @@ rm(results,stats)
 
 ```{r Assess_Test_Set, eval=TRUE }
 
-### Get RMSE with training set.
-
-optimal_lambdas
+optimal_lambdas %>%
+  kable(caption="Result with Optimal Lambdas on Test Set",format = "latex", booktabs = TRUE) %>%
+  kable_styling(latex_options = c("HOLD_position","scale_down"))
           
 ```
 
+```{r third_Prediction, eval=TRUE}
 
-```{r Analysis_1, eval=TRUE}
+rmse_value <- min(optimal_lambdas$RMSE)
+
+compare_RMSE <- add_row(compare_RMSE,
+                        Model="Optimal Clusters + Optimised Lambdas",
+                        RMSE=rmse_value,
+                        "Below Target"=(rmse_value<target_rmse))
+
+compare_RMSE %>% kable(caption="First and Second Predictions",format = "latex", booktabs = TRUE) %>%  kable_styling(latex_options = c("HOLD_position"),position = "center")
+
+rm(rmse_value)
+```
+
+## Checks prior to prediction
+
+Before moving to assess the model against the validation set, there are two points to inspect. The first point was mentioned before and is the RMSE variance when k-fold validation was done. Taking the 5 best results, it is possible to build the below boxplot. This graph show that all combinations are well below the RMSE threshold!
+
+```{r RMSE_variation}
+group_lambda_stats %>% filter(cases %in% lambda_top_rmse$cases) %>% 
+  mutate(l1l2=paste(lambda_1,lambda_2,sep=", ")) %>%
+  select(l1l2,RMSE) %>%
+  ggplot(aes(x=l1l2,y=RMSE,color=l1l2)) + geom_boxplot() + theme(legend.position="bottom") + labs(title="RMSE variation due k-fold validation",x="lambda_1, lambda2", y = "RMSE")+ geom_hline(yintercept=target_rmse, linetype="dashed", color = "red",size=0.5) + theme_grey()
+```
+
+The second inspection is to have a look at the films that couldn't be rated by the clustering mechanism. The table below shows the top 20 films in that category. After reviewing this list, those films seem to be mostly obscure and seems reasonable that couldn't be found in the clustering movie biases. Even if the user is not new, this result would be expected for rare films, which are not going to have many reviews. This is also reassuring since it minimises the risk of popular movies falling into this category and risking a higher prediction error.
+
+```{r Analysis_2, eval=TRUE}
 ### Analyse test results, comments
 
-results_test$prediction %>% filter(method==2) %>% group_by(title) %>% summarise(n=n()) %>% arrange(-n)
+
+(results_test$prediction %>% filter(method==2) %>% 
+   group_by(title) %>% summarise(n=n()) %>% arrange(-n))[1:20,] %>%
+  kable(caption="Non Clusterable Reviews - Movies",format = "latex", booktabs = TRUE) %>%  kable_styling(latex_options = c("HOLD_position"),position = "center")
+
+
 ```
 
 # Results
 <!-- a results section that presents the modeling results and discusses the model performance -->
 
+With all optimsed paramatres, it is time now to try to predict the ratings for the validation set. This will be done in two parts:
 
+* First, the model will be re-train using all optimal parametres and the whole combined training+test dataset.
+* Then the model will be used to predict the ratings for the validation set and the RMSE will be calculated.
 
+The code to achieve this is presented below
 
-```{r Validation_Prediction}
-#Prediction Time
+```{r Validation_Prediction, echo=TRUE}
+# Prediction against validation dataset
 
-##re-join training set and revalidate
-
+##re-join training test tests
 edx <- rbind(edx_train_test$train,edx_train_test$test)
 
-### Retrain user groups, biases
-
+### Retrain : reclustering and re-calculation of biases with new dataset
 
 user_vector_prediction <-User_Vectoriser(edx)
 general_biases_prediction <- General_Biases(edx)
@@ -721,46 +804,47 @@ user_classification_prediction  <- User_Classifier(edx,user_vector_prediction,
                                               genres=genres,step_cutoff=step_cutoff,
                                         cluster_n=cluster_n,cluster_type=cluster_type,
                                         iterations=clustering_iterations)
-biases_by_group_prediction <- Group_Biases(edx,user_classification_prediction,lambda_1=lambda_1,lambda_2=lambda_2)
+biases_by_group_prediction <- Group_Biases(edx,
+                                           user_classification_prediction,
+                                           lambda_1=lambda_1,
+                                           lambda_2=lambda_2)
 
 ### tidy up validation table
+
 validation<-Tidy_Up(validation)
 
+# Predict ratings
 
-prediction <- Rating_Predicter(validation,user_classification_prediction,biases_by_group_prediction,general_biases_prediction)
+prediction <- Rating_Predicter(validation,
+                               user_classification_prediction,
+                               biases_by_group_prediction,
+                               general_biases_prediction)
 
 
-##show stats for prediction
+##Calcuate method split and RMSE
 
-stats <- tibble(RMSE = double(),RMSE_1 = double(),RMSE_2 = double(),RMSE_3 = double(),method_1=double(),method_2=double(),method_3=double())
+stats <- tibble(RMSE = double(),RMSE_1 = double(),
+                RMSE_2 = double(),
+                method_1=double(),method_2=double())
 
 stats <- tibble(RMSE = prediction$RMSE$overall,
-                         RMSE_1=prediction$RMSE$`1`,RMSE_2=prediction$RMSE$`2`,RMSE_3=prediction$RMSE$`3`,
-                         method_1=prediction$distribution_percentage$`1`,method_2=prediction$distribution_percentage$`2`,
-                         method_3=prediction$distribution_percentage$`3`)
+                         RMSE_1=prediction$RMSE$`1`,
+                         RMSE_2=prediction$RMSE$`2`,
+                         method_1=prediction$distribution_percentage$`1`,
+                         method_2=prediction$distribution_percentage$`2`)
 prediction_stats <-stats
 
 rm("stats")         
 ```
 
+The RMSE results are shown in the following table:
+
 ```{r Prediction_Stats, eval=TRUE}
-prediction_stats
+prediction_stats %>% select(-RMSE_3,-method_3) %>%
+  kable(caption="RMSE for validation set",format = "latex", booktabs = TRUE) %>%  kable_styling(latex_options = c("HOLD_position"),position = "center")
 ```
 
-
-
-```{r Validation_Prediction_Analysis,eval=TRUE}
-
-movies_method_2_summary<- prediction$prediction %>% group_by(title) %>% summarise(n_total=n())
-
-movies_method_2_summary <- prediction$prediction %>% filter(method==2) %>% group_by(title) %>% summarise(n_2=n()) %>% left_join(movies_method_all,by="title") 
-
-movies_method_2_summary%>% group_by(n_total,n_2) %>% summarise(n_films=n()) %>% ggplot(aes(x=n_2,y=log(n_total,10),size=n_films))+geom_point()
-
-movies_method_2_summary %>% arrange(-n_total) %>% top_n(10) %>% kable() %>%  kable_styling(bootstrap_options = "striped", full_width = F)
-
-```
-
+\newpage
 # Conclusion
 <!-- a conclusion section that gives a brief summary of the report, its limitations and future work -->
 
