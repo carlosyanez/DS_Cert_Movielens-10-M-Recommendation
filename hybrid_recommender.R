@@ -1,4 +1,11 @@
-###############################
+#####################################################################################################
+#####################################################################################################
+# PH125.9x - Data Science : Capstone
+# Movielens Recommendation Assignment
+# C Yáñez Santibáñez
+#####################################################################################################
+#####################################################################################################
+##
 
 
 
@@ -338,7 +345,12 @@ General_Biases <- function(input_data, lambda_3 = 0, lambda_4 = 0) {
   output
 }
 
-Rating_Predicter <- function(input_data, user_clustering, cluster_biases, general_biases, s_m_threshold = FALSE, s_i_threshold = FALSE, calculate_rmse = TRUE) {
+Rating_Predicter <- function(input_data, user_clustering, 
+                             cluster_biases,
+                             general_biases, 
+                             s_m_threshold = FALSE, 
+                             s_i_threshold = FALSE, 
+                             calculate_rmse = TRUE) {
 
   ### declare output list
   output <- vector(mode = "list", length = 0)
@@ -501,3 +513,6 @@ Movielens_Data_Loader <- function() {
   output$edx <- edx
   output$validation <- validation
 }
+
+#####################################################################################################
+# Code to run e
