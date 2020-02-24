@@ -14,8 +14,8 @@ linkcolor: blue
 mainfont: Arial
 fontsize: 11pt
 always_allow_html: true
-fig_width: 6 
-fig_height: 4 
+#fig_width: 1
+#fig_height: 1 
 ---
 
  <!-- To compile the report into pdf, the files header_includes.tex is require. This file is available at -->
@@ -29,7 +29,8 @@ fig_height: 4
 
 # Avoid to run time consuming analysis - comment if you want to run the notebook from scratch
 
-knitr::opts_chunk$set(echo=FALSE,eval=FALSE,message=FALSE, warning=FALSE,tidy=FALSE,fig.align="center")
+knitr::opts_chunk$set(echo=FALSE,eval=FALSE,message=FALSE, warning=FALSE,tidy=FALSE,fig.align="center",
+                      fig.width=5, fig.height=3)
 
 # Load environment with saved dataset for faster knitting - comment if you want to run the notebook from scratch
 # you can download the file from https://drive.google.com/open?id=1yrZ4zMqOIawRjUuLXcJz10YcBM8NnSiS
@@ -46,11 +47,7 @@ if(!require(data.table)) install.packages("data.table", repos = "http://cran.us.
 if(!require(gtools)) install.packages("gtools", repos = "http://cran.us.r-project.org")
 if(!require(ClusterR)) install.packages("ClusterR", repos = "http://cran.us.r-project.org")
 if(!require(kableExtra)) install.packages("kableExtra", repos = "http://cran.us.r-project.org")
-if(!require(DiagrammeR)) install.packages("DiagrammeR", repos = "http://cran.us.r-project.org")
-if(!require(formatR)) install.packages("formatR", repos = "http://cran.us.r-project.org")
-if(!require(gridExtra)) install.packages("gridExtra", repos = "http://cran.us.r-project.org")
-if(!require(wordcloud)) install.packages("wordcloud", repos = "http://cran.us.r-project.org")
-if(!require(RColorBrewer)) install.packages("RColorBrewer", repos = "http://cran.us.r-project.org")
+
 
 knitr::knit_hooks$set(inline = function(x) { if(!is.numeric(x)){ x }else{ prettyNum(round(x,3), big.mark=" ") } })
 target_rmse <- 0.86490
@@ -96,6 +93,9 @@ The starting point of this project is the model presented in section [33.7 of th
 5. Conclusion.
 
 The following sections present the above points in  further detail.
+
+This file and its associated R file are available in [Github](https://github.com/carlosyanez/Movielens-10-M-Recommendation).
+
 
 \newpage
 # Methods and Analysis
@@ -836,7 +836,7 @@ prediction <- Rating_Predicter(validation,
                                general_biases_prediction)
 
 
-##Calcuate method split and RMSE
+##Calculate method split and RMSE
 
 stats <- tibble(RMSE = double(),RMSE_1 = double(),
                 RMSE_2 = double(),

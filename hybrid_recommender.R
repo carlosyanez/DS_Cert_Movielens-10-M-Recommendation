@@ -5,17 +5,45 @@
 # C Yáñez Santibáñez
 #####################################################################################################
 #####################################################################################################
-##
+# This file contains code used to generate movie rating predictions from the movielens dataset.
+#This file is structured in the following sections:
+# 1. Code to load all require libraries
+# 2. Machine learning model and evaluation functions
+#### 2.1 RMSE calculator
+#### 2.2 TidyUp movielens data set
+#### 2.3 Split data into train and test set
+#### 2.4 Create User Vectors
+#### 2.5 Classify (Cluster) users
+#### 2.6 Calculate biases for general model
+#### 2.7 Calculate biases for cluster-based model
+#### 2.8 Predict Rating 
+#### 2.9 Load data from Movielens source (code provided in course materials)
+# 3. Code to run prediction with optimal parameters (commented)
+
+#####################################################################################################
+#####################################################################################################
+# 1. Code to load all require libraries
+
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+if(!require(data.table)) install.packages("data.table", repos = "http://cran.us.r-project.org")
+if(!require(gtools)) install.packages("gtools", repos = "http://cran.us.r-project.org")
+if(!require(ClusterR)) install.packages("ClusterR", repos = "http://cran.us.r-project.org")
+
+#####################################################################################################
+#####################################################################################################
+# 2. Machine learning model and evaluation functions
 
 
-
-# Root mean square calculation
+#### 2.1 RMSE calculator (self explanatory)
 RMSE <- function(true_ratings, predicted_ratings) {
   sqrt(mean((true_ratings - predicted_ratings)^2))
 }
 
+#### 2.2 TidyUp movielens data set
 Tidy_Up <- function(movielens, title = TRUE, time_stamp = TRUE) {
-  if (!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+#  if (!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+  
   # creating copy, just in case original data is needed for additional transformations
   temp <- movielens
 
@@ -38,10 +66,14 @@ Tidy_Up <- function(movielens, title = TRUE, time_stamp = TRUE) {
   temp
 }
 
-# split data into Train and Test set -input needs to contain "rating" column
+#### 2.3 Split data into train and test set.
 Train_Test <- function(movielens) {
+  
+  #Parameters:
+  #movielens : movielens dataset  
+  
   if (!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
-  # reusing code provided in course materials.
+  # REUSING code provided in course materials.
 
   # set.seed(seed, sample.kind="Rounding")
   # if using R 3.5 or earlier, use `set.seed(1)` instead
@@ -66,27 +98,32 @@ Train_Test <- function(movielens) {
   output
 }
 
-# calculates user vectors, with averages and relative weigth per category
+#### 2.4 Create User Vectors,
 User_Vectoriser <- function(input_data) {
+  
+  #Parameters:
+  #input_data : movielens dataset
+  
   if (!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
-
+  
+  # create output structure
   output <- vector(mode = "list", length = 0)
 
-  # Rank genres
+  # Split into individual genres and rank 
   genres <- input_data %>%
     select(genres) %>%
     group_by(genres) %>%
     summarise(n = n())
+  
   genres <- genres %>%
     separate_rows(genres, sep = "\\|") %>%
     group_by(genres) %>%
     summarise(n_t = sum(n)) %>%
     arrange(-n_t)
 
-
   # calculate averages
   genres_list <- as.vector(genres$genres)
-
+  #first calculation
   user_averages <- input_data %>%
     select(userId, rating, genres) %>%
     filter(grepl(genres_list[1], genres)) %>%
@@ -94,6 +131,7 @@ User_Vectoriser <- function(input_data) {
     summarise(avg_rating = mean(rating)) %>%
     mutate(genre = genres_list[1])
 
+  #repeat for reamining genres
   v <- 2:nrow(genres)
   for (i in v) {
     user_averages_i <- input_data %>%
@@ -106,12 +144,14 @@ User_Vectoriser <- function(input_data) {
     user_averages <- rbind(user_averages, user_averages_i)
   }
 
+  
+# formatting
   user_averages <- user_averages %>%
     spread(genre, avg_rating) %>%
     select(userId, genres_list)
 
-
-
+# calculate weights per genre
+  
   user_n <- input_data %>%
     select(userId, movieId, genres) %>%
     filter(grepl(genres_list[1], genres)) %>%
@@ -133,16 +173,18 @@ User_Vectoriser <- function(input_data) {
   user_n_i <- user_n %>%
     group_by(userId) %>%
     summarise(n_t = sum(n))
+  
   user_n <- user_n %>%
     left_join(user_n_i, by = "userId") %>%
     mutate(n = n / n_t) %>%
     select(-n_t)
+  
   user_n <- user_n %>%
     spread(genre, n) %>%
     select(userId, genres_list)
 
-  # replace NA with zeros
-
+  # replace NAs with zeros
+  
   user_averages[2:ncol(user_averages)][is.na(user_averages[2:ncol(user_averages)])] <- 0
   user_n[2:ncol(user_n)][is.na(user_n[2:ncol(user_n)])] <- 0
 
@@ -155,37 +197,44 @@ User_Vectoriser <- function(input_data) {
   output
 }
 
-User_Classifier <- function(input_data, user_vector = 1, genres = 4, step_cutoff = 0.28, cluster_n = 25, cluster_type = "GMM", iterations = 2) {
-  if (!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
-  if (!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
-  if (!require(ClusterR)) install.packages("caret", repos = "http://cran.us.r-project.org")
+#### 2.5 Classify (Cluster) users,
+User_Classifier <- function(input_data, 
+                            user_vector = 1,
+                            genres = 4,
+                            step_cutoff = 0.5,
+                            cluster_n = 3, 
+                            cluster_type = "GMM", 
+                            iterations = 2) {
 
-  ## parameters:
-  ### genres
-  ### step_cutoff
-  ###  cluster_n
-  ### cluster_type
-  ### iterations
+  #Parameters:
+  # input_data : movielens "tidied-up" dataset
+  # user_vector : output of User_Vectoriser function
+  # genres : number of genres used for clustering (sorted by popularity)
+  # step_cutoff: iteration threshold, compared against sum percentages for selected genres.
+  # cluster_n: Target number of clusters per run, parameter for clustering algorithms
+  # cluster_type: Whether to use "GMM" or "kmeans" method
+  # iterations: Number of times to iterate this process.
+  # Please note that maximum total number of clusters will be cluster_n*iterations
 
-  ### load parameters
-
-
-
-  ### 1.1 user profiles Select genres to evaluate - if not provided - by popularity
-
-  ### 1.2 Create user profiles based on average rating per selected genres
-
-  ##### 1.2.1 Calculate user vectors if not provided
+  
+  # Calculate user vectors if not provided
 
   if (!(typeof(user_vector) == "list")) {
     user_vector <- User_Vectoriser(input_data)
   }
 
+  #Run if only one iteration
+  
   if (iterations < 2) {
+    
+    #Create vector for clustering, composed of averages and genre weights, according number of desired genres.
+    
     user_profiles <- user_vector$user_averages[, 0:genres + 1] %>%
       left_join(user_vector$user_weights[, 0:genres + 1], by = "userId")
     us <- user_profiles %>% select(-userId)
-
+    
+    # Cluster, using either kmeans or GMM
+    
     if (cluster_type == "kmeans") {
       users_classification <- kmeans(us, centers = cluster_n, nstart = 30, iter.max = 30)
       user_profiles$group <- users_classification$cluster
@@ -196,9 +245,15 @@ User_Classifier <- function(input_data, user_vector = 1, genres = 4, step_cutoff
       user_profiles$group <- pr$cluster_labels
       rm(fit, pr, us)
     }
-
+    #Result : user/cluster mapping
+    
     user_profiles <- user_profiles %>% select(userId, group)
   } else {
+    
+    #two or more iterations 
+    
+    #Create vector for clustering, composed of averages and genre weights, according number of desired genres.
+    
     user_profiles <- user_vector$user_averages[, 0:genres + 1] %>%
       left_join(user_vector$user_weights[, 0:genres + 1], by = "userId")
 
@@ -217,7 +272,7 @@ User_Classifier <- function(input_data, user_vector = 1, genres = 4, step_cutoff
       rm(fit, pr, us)
     }
 
-    # prep for second iteration
+    # prepare  for second iteration
 
     user_vector_i <- user_vector
     user_vector_i$user_weights$percentage <- rowSums(user_vector_i$user_weights[, 2:genres + 1])
@@ -232,6 +287,8 @@ User_Classifier <- function(input_data, user_vector = 1, genres = 4, step_cutoff
       filter(!(userId %in% excluded_ids$userId)) %>%
       select(userId, group)
 
+    #iterate 
+    
     it <- 2:iterations
 
     for (i in it) {
@@ -281,6 +338,7 @@ User_Classifier <- function(input_data, user_vector = 1, genres = 4, step_cutoff
       excluded_lines <- input_data %>% filter(userId %in% excluded_ids$userId)
     }
   }
+  
   # catch any excluded items
   excluded_lines <- input_data %>%
     filter(!(userId %in% user_profiles$userId)) %>%
@@ -291,8 +349,11 @@ User_Classifier <- function(input_data, user_vector = 1, genres = 4, step_cutoff
   user_profiles
 }
 
+#### 2.6 Calculate biases for general model.
 Group_Biases <- function(input_data, user_profiles,
                          lambda_1 = 0, lambda_2 = 0) {
+  
+  
   output <- vector(mode = "list", length = 0)
 
   training_modified <- input_data %>% left_join(user_profiles, by = "userId")
@@ -322,6 +383,7 @@ Group_Biases <- function(input_data, user_profiles,
   output
 }
 
+#### 2.7 Calculate biases for cluster-based model
 General_Biases <- function(input_data, lambda_3 = 0, lambda_4 = 0) {
   output <- vector(mode = "list", length = 0)
 
@@ -345,6 +407,7 @@ General_Biases <- function(input_data, lambda_3 = 0, lambda_4 = 0) {
   output
 }
 
+#### 2.8 Predict Rating 
 Rating_Predicter <- function(input_data, user_clustering, 
                              cluster_biases,
                              general_biases, 
@@ -457,6 +520,7 @@ Rating_Predicter <- function(input_data, user_clustering,
   output
 }
 
+#### 2.9 Load data from Movielens source (code provided in course materials)
 Movielens_Data_Loader <- function() {
   output <- vector(mode = "list", length = 0)
 
@@ -510,9 +574,77 @@ Movielens_Data_Loader <- function() {
 
   rm(dl, ratings, movies, test_index, temp, movielens, removed)
 
+#### SMALL addition to code provided , so it can run as a function returning the edx and validation datasets.  
   output$edx <- edx
   output$validation <- validation
 }
 
 #####################################################################################################
-# Code to run e
+#####################################################################################################
+# 3. Code to run prediction with optimal parameters (commented)
+### This code is mean tot be ran AFTER TRAINING - therefore there is no further split for training 
+#and testing data.
+
+#Optimal parameters
+#cluster_n <-20
+#cluster_type<-"GMM"
+#clustering_iterations <-2
+#genres <- 6
+#step_cutoff <- 0.5
+#lambda_1 <- 2
+#lambda_2 <- 4.5
+
+### Download data from the Internet
+
+## Uncomment the below lines to reload the Movielens database
+#movielens_10M<-Movielens_Data_Loader()
+#edx <- movielens_10M$edx
+#validation <- movielens_10M$validation
+#rm(movielens_10M)
+
+##Tidy up edx data for training.
+#edx<- Tidy_Up(edx)
+
+### Retrain : reclustering and re-calculation of biases with new dataset
+
+#user_vector_prediction <-User_Vectoriser(edx)
+#general_biases_prediction <- General_Biases(edx)
+#user_classification_prediction  <- User_Classifier(edx,user_vector_prediction,
+#                                                   genres=genres,
+#                                                   step_cutoff=step_cutoff,
+#                                                   cluster_n=cluster_n,
+#                                                   cluster_type=cluster_type,
+#                                                   iterations=clustering_iterations)
+#biases_by_group_prediction <- Group_Biases(edx,
+#                                           user_classification_prediction,
+#                                           lambda_1=lambda_1,
+#                                           lambda_2=lambda_2)
+
+### tidy up validation table
+
+#validation<-Tidy_Up(validation)
+
+# Predict ratings
+
+#prediction <- Rating_Predicter(validation,
+#                               user_classification_prediction,
+#                               biases_by_group_prediction,
+#                               general_biases_prediction)
+
+
+##Calculate method split and RMSE
+#prediction_stats <- tibble(RMSE = double(),RMSE_1 = double(),
+#                RMSE_2 = double(),
+#                method_1=double(),method_2=double())
+
+#prediction_stats <- tibble(RMSE = prediction$RMSE$overall,
+#                RMSE_1=prediction$RMSE$`1`,
+#                RMSE_2=prediction$RMSE$`2`,
+#                method_1=prediction$distribution_percentage$`1`,
+#                method_2=prediction$distribution_percentage$`2`)
+
+#####################################################################################################
+#####################################################################################################
+#End of File
+#####################################################################################################
+#####################################################################################################
