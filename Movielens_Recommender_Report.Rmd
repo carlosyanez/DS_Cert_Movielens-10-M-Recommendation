@@ -47,7 +47,7 @@ if(!require(data.table)) install.packages("data.table", repos = "http://cran.us.
 if(!require(gtools)) install.packages("gtools", repos = "http://cran.us.r-project.org")
 if(!require(ClusterR)) install.packages("ClusterR", repos = "http://cran.us.r-project.org")
 if(!require(kableExtra)) install.packages("kableExtra", repos = "http://cran.us.r-project.org")
-
+if(!require(gridExtra)) install.packages("gridExtra", repos = "http://cran.us.r-project.org")
 
 knitr::knit_hooks$set(inline = function(x) { if(!is.numeric(x)){ x }else{ prettyNum(round(x,3), big.mark=" ") } })
 target_rmse <- 0.86490
@@ -66,33 +66,33 @@ target_rmse <- 0.86490
 # Introduction
  <!-- introduction/overview/executive summary section that describes the dataset and summarizes the goal of the project and key steps that were performed -->
 
-This document presents a machine learning model that aim to predict (recommend) movie ratings for particular users of a streaming or review platform. This report is a capstone assignment for HarvardX's Professional Certificate in Data Science, which can be taken at the edX platform. The program is available at   [https://www.edx.org/professional-certificate/harvardx-data-science]( https://www.edx.org/professional-certificate/harvardx-data-science).
+This document presents a machine learning model, aiming to predict (recommend) movie ratings. This report is a capstone assignment for HarvardX's Professional Certificate in Data Science, which can be taken at the edX platform. The program is available at   [https://www.edx.org/professional-certificate/harvardx-data-science]( https://www.edx.org/professional-certificate/harvardx-data-science).
 
-The data used in this exercise comes from  the [Movielens 10M Dataset](https://grouplens.org/datasets/movielens/10m/). After using the download code provided in the course, the resulting data frame contains observations with an individual movie rating from a particular user, each with the below attributes:
+The data used in this exercise comes from  the [Movielens 10M Dataset](https://grouplens.org/datasets/movielens/10m/). After using the download code provided in the course, the resulting data frame contains a series of  observations, each with the below attributes:
 
 1. **`r colnames(edx)[1]`** : Unique user identifier
-2. **`r colnames(edx)[2]`** : Unique movie identified
+2. **`r colnames(edx)[2]`** : Unique movie identifier
 3. **`r colnames(edx)[3]`** : Rating given to this movie by the particular user.
-4. **`r colnames(edx)[4]`** : Time stamp indicating when the the user submitted the rating.
+4. **`r colnames(edx)[4]`** : Timestamp indicating when the the user submitted the rating.
 5. **`r colnames(edx)[5]`** : Title of the film and its release year in brackets. Please note that different movies can have the same name (e.g. remakes), thus `r colnames(edx)[2]` is a better unique identifier.
-6. **`r colnames(edx)[6]`** : List of all genres in which this movie can be classified.
+6. **`r colnames(edx)[6]`** : List of all genres, in which this movie can be classified.
 
 ```{r Column_Names}
 #Used to retrieve column names during report writing
 colnames(edx)
 ```
 
-The goal of this project is to generate a model that can predict a particular movie rating for each user, as close as possible to the actual rating given to each film. In order to assess the model performance, the **Root Square Mean Error (RMSE)** will be calculated for a validation dataset. Training and validation dataset are generated using the code provided in the assignment instructions. In order to aim for a full mark, this report will target for a RMSE lower than **`r sprintf("%3.5f", target_rmse)`**.
+The goal of this project is to generate a model that can predict a particular movie rating, as close as possible to the actual rating given to each film. In order to assess performance, the **Root Square Mean Error (RMSE)** will be calculated, with the error defined as the diference between predicted and actual ratings. The Training and validation datasets are generated using the code provided in the assignment instructions. In order to aim for a full mark, this report will target for a RMSE lower than **`r sprintf("%3.5f", target_rmse)`**.
 
-The starting point of this project is the model presented in section [33.7 of the course's textbook](https://rafalab.github.io/dsbook/large-datasets.html#recommendation-systems). From there, the following steps are presented:
+The starting point of this project is the model presented in section [33.7 of the course's textbook](https://rafalab.github.io/dsbook/large-datasets.html#recommendation-systems). Then, the following steps are presented:
 
 1. Analysis of the textbook's model and possible ways to improve it.
-2. Improvement to the model via user clustering.
+2. Improvement adding user clusters.
 3. Tuning improved model.
 4. Evaluation against validation dataset.
 5. Conclusion.
 
-The following sections present the above points in  further detail.
+The subsequent sections present the above points in further detail.
 
 This file and its associated R file are available in [Github](https://github.com/carlosyanez/Movielens-10-M-Recommendation).
 
@@ -102,15 +102,16 @@ This file and its associated R file are available in [Github](https://github.com
 <!-- methods/analysis section that explains the process and techniques used, including data cleaning, data exploration and visualization, insights gained, and your modeling approach -->
 
 ## Preparing the data
-As mentioned in the introduction, this reports starts with the model presented in the textbook and then explore options to improve segmenting the users. However before conducting any modelling, the data needs to be cleaned up a little bit and then split into training and testing set.
+
+Before conducting any modelling, the data needs to be cleaned up a little bit, and then split into training and testing set.
 
 In terms of data cleaning, three operations have been considered, namely:
 
-* Remove the year from the title and storing in a different column. This may be useful for modelling.
+* Remove the year from the title and store it in a different column. This may be useful for modelling.
 * For the same reasons, convert the time stamp into a year number.
-* Finally, a sequential number will be added (*row_id*). This will be create a single unique ID for each record (instead of a userId and movieId combination) and maybe useful to speed up filtering, given the large size of the dataset.
+* Finally, add a sequential number (*row_id*). This will be create a single unique ID for each record (instead of a userId and movieId combination) and maybe useful to speed up filtering, given the large size of the dataset.
 
-For this purposes, the below function **Tidy_Up** has been created. The code for this function is available on the included R file. Using the below code the train and test sets are created.
+To achieve this, the function **Tidy_Up** has been created. The code for this function is available on the included R file. Then, training and test sets are created with the below code:
 
 
 ```{r Tidy_Up_Data, echo=TRUE}
@@ -126,7 +127,7 @@ rm("edx_tidy_temp","edx")
 
 ```
 
-Below, this is a sample of the generated training set (*edx_train_test$train*).
+This is a sample of the generated training set (*edx_train_test$train*):
 
 ```{r sample_training_dataset, eval=TRUE, echo=FALSE, message=FALSE, warning=FALSE}
 edx_train_test$train[1:10,] %>% kable(caption="Training Dataset - Sample",format = "latex", booktabs = TRUE) %>%  kable_styling(latex_options = c("hold_position","scale_down"))
@@ -134,26 +135,26 @@ edx_train_test$train[1:10,] %>% kable(caption="Training Dataset - Sample",format
 
 ## Textbook Model
 
-Once completed data cleaning and split, the first step is to implement the model presented in the textbook and asses it's results. This model estimates rating by assuming that a particular rating from a particular user can be calculated as a deviation (bias) from the average rating for all movies (the *true* rating). In order to account for cases where movies and users don't have many reviews against them, weighting parameters have been added. This can be expressed by the below equation:
+As a starting point, the model presented in [section 33.7 of the course's textbook](https://rafalab.github.io/dsbook/large-datasets.html#recommendation-systems) will be used. This model estimates rating by assuming that a particular rating can be seen as a combination of the average rating for all movies (the *true* rating) plus movie and user effects (biases). In order to account for cases where movies and users don't have many reviews against them, weighting parameters have been added. All of this can be expressed by the below equation:
 
 $$\large{predicted \ rating =  \hat{\mu} + b_i + b_u}$$
 
-where $\hat(\mu)$ is the average rating for all movies in the dataset, and $b_i$ and $b_u$ being the movie bias and user bias (respectively), defined as follows:
+
+where $\hat(\mu)$ is the average rating for all movies in the dataset, and $b_i$ and $b_u$ are the movie bias and user bias (respectively), both defined as follows:
 
 $$b_i = \frac{1}{\lambda_1 + m}\sum_{j=1}^{m} (rating_j - \hat{\mu})$$
 $$b_u = \frac{1}{\lambda_2 + n}\sum_{j=1}^{n} (rating_j - \hat{\mu} - b_{i,j})$$
 
 where
 
-* $rating_j$ :a particular movie rating 
-* $m$ : the number of all ratings for a particular movie
-* $n$ : the total number of ratings submitted from a particular user (one rating per movie).
-* $ b_{i,j}$ : the *movie bias* for a particular movie
-* $\lambda_1$ :  weighting parameter for *movie biases*.
-* $\lambda_2$ :  weighting parameter for *user biases*.
+* $rating_j$ : is a particular movie rating 
+* $m$ : is the number of all ratings for a particular movie
+* $n$ : is the total number of ratings submitted from a particular user (one rating per movie).
+* $ b_{i,j}$ : is the *movie bias* for a particular movie
+* $\lambda_1$ :  is a weighting parameter for *movie biases*.
+* $\lambda_2$ :  is a weighting parameter for *user biases*.
 
-
-The calculation of these parameters has been written into the function *General_Biases*. Then, these results are used to create the first set of predictions, setting the tuning parameters to zero. The results are evaluated using the provided *RMSE* function.
+The calculation of these parameters has been written into the function *General_Biases*. To create the first prediction, $lamdba$ parameters are set to zero. The results are evaluated using the provided *RMSE* function.
 
 ```{r Calculate_Biases, echo=TRUE, eval=TRUE}
 # create biases
@@ -192,13 +193,13 @@ rm(first_prediction,data_set,rmse_value)
 compare_RMSE %>% kable(caption="First Prediction",format = "latex", booktabs = TRUE) %>%  kable_styling(latex_options = c("hold_position"),position = "center")
 ```
 
-As expected, the RMSE is higher than the target value. After thinking about the possible causes of this, part of this may be related to the fact that this model is based on averages. Although this  is not necessarily a bad approach and works for many cases, it also has some limitations, namely:
+As expected, the RMSE is higher than the target value. After considering the possible causes for this result, part of this may be related to the fact that this model is based on averages: although this is not necessarily a bad approach and works for many cases, it also has some limitations, namely:
 
 * it won't perform well with *divisive* movies. For example a niche film will obtain 5 stars from the fans, but will be many users which will dislike. This won't be reflected by an average bias (and the user bias may not necessarily compensate this).
-* There will be users with extreme ratings (i.e. who like family movies and dislike horror films). The user bias won't reflect this.
-* Already mentioned in the textbook, when the number of reviews for a user or a film is low , this model won't predict accurately.
+* There will be users with extreme ratings (i.e. who absolutely like family movies and completely dislike horror films). A user bias average will fail to reflect this situation.
+* Already mentioned in the textbook, when the number of reviews for a user or a film is low, this model won't predict accurately.
 
-Taking this into account, the *General_Biases* function also calculates the standard deviation of the movie and user biases (named *s_i* and *s_u* respectively). The below charts show their results
+Taking all those points into account, the *General_Biases* function has been implementes to also calculate the standard deviation of the movie and user biases (named *s_i* and *s_u* respectively). The below charts show their results:
 
 ```{r Movie_Biases_1, eval=TRUE}
  general_biases_first$movie_avgs %>% filter(!is.na(s_i)) %>%
@@ -216,7 +217,7 @@ Taking this into account, the *General_Biases* function also calculates the stan
   labs(title="User biases deviations",x="s_u", y = "Movies")
 ```
 
-As shown, there is a significant percentage of movie (`r round(mean(general_biases_first$movie_avgs %>% filter(!is.na(s_i)) %>% .$s_i >=1)*100,2)` %) and user (`r  round(mean(general_biases_first$user_avgs %>% filter(!is.na(s_u)) %>% .$s_u >=1)*100,2)` %) biases equal or larger than 1. This means there will be many cases where this model with values contributing to a larger RMSE. Although movies/user with lower number of reviews have higher deviations, this is not always the case, as illustrated in the below graph.
+As shown, there is a significant percentage of movie (`r round(mean(general_biases_first$movie_avgs %>% filter(!is.na(s_i)) %>% .$s_i >=1)*100,2)` %) and user (`r  round(mean(general_biases_first$user_avgs %>% filter(!is.na(s_u)) %>% .$s_u >=1)*100,2)` %) biases equal or larger than 1. This means there will be many cases where this model with values contributing to a larger RMSE. Although movies/users with lower number of reviews have higher deviations, this is not always the case, as illustrated in the below graph.
 
 ```{r deviations_per_reviews, eval=TRUE}
 general_biases_first$movie_avgs %>% filter(!is.na(s_i)) %>% mutate(s_i=round(s_i,3)) %>% group_by(n_i,s_i) %>%
@@ -230,7 +231,6 @@ general_biases_first$movie_avgs %>% filter(!is.na(s_i)) %>% mutate(s_i=round(s_i
 Perhaps, a way to illustrate this is to look at two films with similar number of reviews and average rating (and close $b_i$) but different standard deviations for their ratings.
 
 ```{r Deviation Comparison,eval=TRUE}
-
 # Romeo + Juliet
 selected_reviews_1<- edx_train_test$train %>% filter(movieId==1059) 
 selected_title_1 <- unique(selected_reviews_1$title)
@@ -250,15 +250,15 @@ rm(selected_reviews_1,selected_title_1,selected_1,selected_reviews_2,selected_ti
 common_users <- nrow(edx_train_test$train %>% filter(movieId %in% c(8665,1059)) %>%  select(userId) %>% unique())
 ```
 
-Looking at the charts above, it looks like *Romeo+Juliet* has a wider range of opinions, compared to a more concentrated range of ratings in the case of the *Bourne Supremacy*, which in turns means the model won't be as effective, especially for the `r common_users` users who have rated both films and may be in all sections of liking/disliking this particular combination of films, which is not captured in the existing model.
+Looking at the charts above, it looks like *Romeo+Juliet* has a wider range of opinions, compared to a more concentrated range of ratings in the case of  *The Bourne Supremacy*. This means the model won't be as effective for this two films in the cases for the `r common_users` users who have rated both films and may be in all sections of liking/disliking this particular combination of films.
 
 ## An Improved Model : User Clustering
 
-All the previous observations notwithstanding, it is still worth pointing that the above model has merit, given its relative simplicity and ease to calculate. In addition, in the textbook, this model shows a good performance with a dataset considerably smaller than 8+ million observations.
+All the previous observations notwithstanding, it is still worth pointing out that the above model still has merit, given its relative simplicity and ease of calculation. 
 
-Perhaps, 8 million reviews is indeed a large number of reviews and it is possible to generate ratings based on smaller groups. This gives the opportunity to segment the data into smaller groups, where deviations are smaller and therefore have  a lower prediction error.
+Perhaps, 8 million reviews is a large number of reviews and it is possible to generate ratings based on smaller groups without loss of accurary or without invalidating the averages approach. Perhalps, if data is segmented in groups with similar traits, the overall error may decrease.
 
-One approach is to cluster the users according their similar movie tastes (i.e split the ones who like Shakespearean romances from the fans of action thrillers). The way used in this report classify the users based on the genres of the films they have rated.
+One way to achieve this is to group the users with similar movie preferences (i.e split the ones who like Shakespearean romances from the fans of action thrillers). In this excercise, the chosen was to undertake this task is to leverage the genres of the already rated films to create distinct user vectors or *profiles*.
 
 ```{r Create_User_Vector}
 user_vector <-User_Vectoriser(edx_train_test$train)
@@ -268,14 +268,16 @@ As mentioned before, each film has a set of genres they belong (from one to many
 
 ```{r genres_list, eval=TRUE}
 user_vector$genres %>% kable(caption="Genres in training set, ordered by occurrences",format = "latex", booktabs = TRUE,format.args = list(decimal.mark = '.', big.mark = " ")) %>%  kable_styling(latex_options = c("HOLD_position"))
+
+user_vector$genres %>% kable(caption="Genres in training set, ordered by occurrences",format = "html", booktabs = TRUE,format.args = list(decimal.mark = '.', big.mark = " ")) 
 ```
 
-In order to profile each user, this report has used the genre in two ways:
+In order to profile each user, this report has used the genre property in two ways:
 
 * The average rating each user gives to each genre, for each film rated (i.e. how much each user likes each genre).
 * The percentage of each genre compared to the overall reviews per user (i.e. how much each user watches each genre).
 
-This will result in a *user_vector*, profiling each user in the training set. This algorithm, has been written in the *User_Vectoriser* function, present in the attached R file. The below table shows a sample of the user vectors created by this code.
+This will result in a *user_vector*, for each user in the training set. The algorithm has been written in the *User_Vectoriser* function, available in the project's R file. The below table shows a sample of the user vectors created with this code.
 
 ```{r User_Vector_Sample_1, eval=TRUE}
 
@@ -301,7 +303,7 @@ tibble(genres=rowSums(user_vector$user_weights[,2:ncol(user_vector$user_weights)
 ```
 
 
-Using these vectors, it is possible to use existing clustering algorithms such as k-means (presented in [section 34 of the textbook](https://rafalab.github.io/dsbook/clustering.html)). However after an initial test, **Gaussian Mixture Model clustering** (GMM) was chosen instead. [This link](https://towardsdatascience.com/gaussian-mixture-models-d13a5e915c8e) offers and explanation of the algorithm and why can be a better method for to account variances in this particular case. In this exercise, the GMM implementation the [**ClusterR**](https://cran.r-project.org/web/packages/ClusterR/ClusterR.pdf) package is used. The code below shows a sample of how GMM is used in this project.
+Using the vectors it is possible to leverage existing clustering algorithms such as k-means (presented in [section 34 of the textbook](https://rafalab.github.io/dsbook/clustering.html)). However after an initial test other methods where considered and  **Gaussian Mixture Model clustering** (GMM) was chosen instead. [This link](https://towardsdatascience.com/gaussian-mixture-models-d13a5e915c8e) offers and explanation of the this method and the reasons why can be a better way in this particular case. In this exercise, the GMM implementation in [**ClusterR**](https://cran.r-project.org/web/packages/ClusterR/ClusterR.pdf) package is used. The code below shows a sample of how GMM is used in this project.
 
 
 ```{r GMM sample,echo=TRUE}
@@ -329,9 +331,9 @@ user_profiles
 
 Before running the above code, it is worth noticing that:
 
-* The combined averages and weights vectors have 40 dimensions, which is large. In addition, most of these vector don't have a presence across all these dimensions (in this particular training set, none has). Potentially there are some vector without any common dimensions (action&adventure fans opposite documentaries&film-noir followers).
-* Although no analysis has been done, it is reasonable to assume that some genres have a big overlap, thus not all dimensions are independent from each other.
-* There will be a significant number of vectors(users) defined by the most popular dimensions (genres).
+* The combined average and weight vectors have 40 dimensions. In most cases, a vector only has present on subset of those dimensions (in this particular training set, none has). Potentially there are  vectors without common touchpoints (action&adventure fans opposite documentaries&film-noir followers).
+* Although no analysis has been done for this report, it is reasonable to assume that some genres have a big overlap. Hence, it is reasonable to assume that  not all dimensions are *independent variables*.
+* Based on the previous numbers, it is also reasonable to assume that a large percentage of users can be group using only  a subset of the most popular genres.
 * Taking this into account, using all dimensions may not be the best method of clustering - and it is interesting to assess how this impacts the RMSE.
 * In addition, the number of clusters  - which will certainly have an impact on the RMSE - is an input parameter.
 
@@ -346,44 +348,14 @@ Considering all the points above and after some initial tests, this document pro
 7. Step 6 repeated as many times as desired or until there are either no users left or there is no enough data to cluster them.
 8. All remaining users (if any) and classified in a residual group.
 
-<!-- The below chart presents a flow diagramme for this algorithm. -->
-
-```{r Clustering Flowchart, message=TRUE, include=FALSE}
-grViz("digraph flowchart {
-      # node definitions with substituted label text
-      node [fontname = Helvetica, shape = rectangle]        
-      tab1 [label = '@@1']
-      tab2 [label = '@@2']
-      tab3 [label = '@@3']
-      tab4 [label = '@@4']
-      tab5 [label = '@@5']
-      tab6 [label = '@@6']
-      tab7 [label = '@@7']
-
-      # edge definitions with the node IDs
-      tab1 -> tab2 -> tab3 -> tab4 -> tab5 -> tab6 -> tab7;
-
-      }
-
-      [1]: 'Calculate user vectors'
-      [2]: 'Determine number of genres to use for clustering'
-      [3]: 'Determine threshold percentage for selected genres, filter eligible users'
-      [4]: 'Cluster filtered users'
-      [5]: 'Repeat process with leftover users, as many times as chosen'
-      [6]: 'Attempt to cluster remnant users, put rest in special group'
-      [7]: 'Consolidate and generate grouping'
-      
-      ")
-```
-
 This algorithm as been written into the **User_Classifier** function, available in the R file. It is worth noticing this process has four *arbitrary* parameters that will change the number of resulting clusters and therefore the may have an impact on the RMSE - this will be discussed later in the document.
 
 Once the users have been segmented, it is possible to use the *textbook* model to calculate the average and biases for each of these groups and then predict ratings (the objective of this entire process!). The first part of this step is straightforward (just add the group to the dataset and use this parameter to group prior to summarising) and it has been written into a function called **Group_Biases**.
 
-However, for  predicting algorithm needs to consider that potentially some user weren't not grouped into a meaningful cluster and thus this method makes no sense. Additionally, there maybe situations where a particular (group,movie) was absent from the training data and this method is not valid. To cover those situations, the prediction algorithm needs to steps:
+However, it needs to be considered that potentially some user weren't not grouped into a meaningful cluster and thus this method makes no sense. Additionally, there maybe situations where a particular group or movie is absent from the training data and this method is not valid. To cover those situations, the prediction algorithm has two steps:
 
 1. A prediction method using group averages and biases for all qualifying reviews - just like the textbook model but split per group.
-2. A *backstop* method for all reviews don't fit the above - for this we can use the 'textbook' method, which is better than just guessing.
+2. A *backstop* method for all reviews don't fit the above - for this the 'textbook' method is used.
 
 Please note that both segments have tuning parameters ($\lambda_{1-4}$).
 
@@ -395,7 +367,7 @@ The first optimisation step consists in finding the optimal clustering parameter
 
 1. the number of genres (*genres*) to consider in each clustering round.
 2. the number of target clusters per round (*cluster_n*).
-3. the cut-off value to filter the users to feed into each clustering round (*cut-off*).
+3. the cut-off value to filter the users for each clustering round (*cut-off*).
 4. the number of time clustering will be attempted (*iterations*).
 
 This process has been executed through the below code.
@@ -427,11 +399,16 @@ for(g in iterations){
  
         #create groups, biases  and predict
         
-        user_classification  <- User_Classifier(edx_train_test$train,user_vector,
-                                                genres=i,step_cutoff=h,cluster_n=j,
-                                                cluster_type="GMM",iterations=g)
+        user_classification  <- User_Classifier(edx_train_test$train,
+                                                user_vector,
+                                                genres=i,
+                                                step_cutoff=h,
+                                                cluster_n=j,
+                                                cluster_type="GMM",
+                                                iterations=g)
         
-        biases_by_group <- Group_Biases(edx_train_test$train,user_classification)
+        biases_by_group <- Group_Biases(edx_train_test$train,
+                                        user_classification)
         
         results<-Rating_Predicter(edx_train_test$test,user_classification,
                                   biases_by_group,general_biases)
@@ -455,13 +432,13 @@ rm(g,h,i,j,results,stats)
 
 ```
 
-This code in turn produces the results represented in the below chart.
+This code generates the results represented in the below chart.
 
 ```{r RMSE Graph, eval=TRUE, echo=FALSE, message=FALSE, warning=FALSE}
 clustering_stats%>% ggplot(aes(x=cluster_n,y=RMSE,color=genres)) + geom_point() + facet_grid(.~iterations) +theme(legend.position="bottom") + labs(title="Model tuning by iterations",x="Clusters per iteration", y = "RMSE")+ geom_hline(yintercept=min(clustering_stats$RMSE), linetype="dashed", color = "red",size=0.5) + theme_grey()
 ```
 
-The optimal solution has the below parameter, which shows also the resulting overall RMSE plus the RMSE for the clustered (RMSE_1) and non-clusters (RMSE_2) groups, along with the proportion of reviews in each method.
+The optimal solution has the below parameters,(also displaying the resulting overall RMSE plus the RMSE for the clustered (RMSE_1) and non-clusters (RMSE_2) groups, along with the proportion of reviews in each method).
 
 ```{r Clustering_Statistics, eval=TRUE, echo=FALSE, message=FALSE, warning=FALSE}
 
@@ -470,7 +447,7 @@ clustering_stats[which.min(clustering_stats$RMSE),] %>%
   kable(caption="Optimal Clustering Parameters",format = "latex", booktabs = TRUE) %>%  kable_styling(latex_options = c("hold_position","scale_down"))
 ```
 
-When compared with the *textbook* method, this procedure has better results:
+When compared with the *textbook* method, this procedure clearly a better RMSE:
 
 ```{r second_Prediction, eval=TRUE}
 
@@ -488,8 +465,8 @@ rm(rmse_value)
 
 What are reasons this method has a better performance? Some explanations are:
 
-* In this cases, there are different averages for different groups, having more accurate stating points.
-* Also, grouping provides movie biases with smaller deviations, contributing to a smaller RMSE. In this case,  `r mean((biases_by_group$movie_group_avgs %>% filter(!is.na(s_m)))$s_m<1)*100` % of the deviations are lower than 1, compared to `r mean((general_biases_first$movie_avgs %>% filter(!is.na(s_i)))$s_i<1)*100
+* There are different averages for different groups, having more accurate stating points.
+* Grouping provides movie biases with smaller deviations, contributing to a smaller RMSE. In this case,  `r mean((biases_by_group$movie_group_avgs %>% filter(!is.na(s_m)))$s_m<1)*100` % of the deviations are lower than 1, compared to `r mean((general_biases_first$movie_avgs %>% filter(!is.na(s_i)))$s_i<1)*100
 ` % for the *textbook* case. This can be visualised in the below chart:
 
 ```{r Movie_Biases_2, eval=TRUE}
@@ -524,7 +501,7 @@ user_classification  <- User_Classifier(edx_train_test$train,user_vector,
 
 ```
 
-It is worth noticing this solution generates splits the training set into `r length(unique(user_classification$group))` groups of users, with the below characteristics:
+This solution splits the training set into `r length(unique(user_classification$group))` groups of users, with the below characteristics:
 
 ```{r user_group_stats}
 
@@ -554,20 +531,20 @@ user_groups_stats %>% kable(caption="Optimal User Groups",format = "latex", book
 
 ```
 
-Looking at this and the compared deviation histogram's, it looks like there are groups that maybe quite similar  and there improvement in accuracy seems smaller, yet the result improves. Although not covered in there report, perhaps exploring better clustering mechanisms will deliver significantly improved results.
+Looking at this and the compared deviation histogram's, it looks like there are groups that maybe are similar. Although left out of scope for this report, perhaps exploring better clustering mechanisms will deliver significantly improved results.
 
 ## Tuning Step 2: $\lambda$ parameters
 
-Having settled on a set of optimal clustering parameters, there is still room to attempt improving the RMSE but tuning the $\lambda$ parameters in the movie and user bias equations:
+Having settled on a set of optimal clustering parameters, there is still room to attempt improving the RMSE by tuning the $\lambda$ parameters in the movie and user bias equations:
 
 $$b_i = \frac{1}{\lambda_1 + m}\sum_{j=1}^{m} (rating_j - \hat{\mu})$$
 $$b_u = \frac{1}{\lambda_2 + n}\sum_{j=1}^{n} (rating_j - \hat{\mu} - b_{i,j})$$
 
-In the proposed model, the are four lambda parameters: two for the clustering biases (from now on, $\lambda_1$ and $\lambda_2$) and two for the backstop model ($\lambda_3$ and $\lambda_4$). However, given the previous result shows that over 99% of the dataset fit in the cluster method, thus no tuning of ($\lambda_3$ and $\lambda_4$) will be done at this stage.
+In the proposed model, the are four lambda parameters: two for the clustering biases (from now on, $\lambda_1$ and $\lambda_2$) and two for the backstop model ($\lambda_3$ and $\lambda_4$). Given that the previous result shows that over 99% of the dataset fit in the cluster method, at this stage no tuning of ($\lambda_3$ and $\lambda_4$) will be done.
 
-In addition, at this stage it would be good to see how much the RMSE naturally varies due to being a random variable - in order to have a level of confidence how well the method will perform against the validation set. For these two reasons, k-fold cross validation will be also done at this point.
+Additionally, it would be good to see how much the RMSE varies due to being a random variable, in order to have a level of confidence how well the method will perform against the validation set. To address this, k-fold cross validation will be conducted.
 
-There is one problem with the method : since there are three variables to tune and each iteration requires data partition, user clustering, calculating biases and predictions. As experienced in the previous optimisation, this will take **several** hours to complete. As a workaround, tuning will proceed the following way:
+However, there is one problem:there are three variables to tune and each iteration requires data partition, user clustering, calculating biases and predictions. As per the experience from the previous optimisation step, it is safe to assume this will take **several** hours to complete. To alleviate this tuning will proceed the following way:
 
 1. First, we will run iterations to run $lambda_1$ and $lambda_2$.
 3. From this first set, we will choose the twenty combinations with the lowest RMSE.
@@ -652,7 +629,7 @@ lambda_top_20_rmse_1 %>% select(-k,-RMSE_3,-method_3,-cases) %>%
 
 ```
 
-Then, using a modified version of the previous code, 5 more iterations of those 20 sets of $lambdas$ are generated and average RMSEs are calculated. The best 5 results are presented in the below table.
+Then, using a modified version of the previous code, 5 more iterations of those 20 sets of $lambdas$ are generated and average RMSEs are calculated. The best five results are presented in the below table.
 
 ```{r Lambda_Tuning_3}
 
@@ -771,7 +748,7 @@ rm(rmse_value)
 
 ## Checks prior to prediction
 
-Before moving to assess the model against the validation set, there are two points to inspect. The first point was mentioned before and is the RMSE variance when k-fold validation was done. Taking the 5 best results, it is possible to build the below box plot. This graph show that all combinations are well below the RMSE threshold!
+Before moving to assess the model against the validation set, there are two points to look at. The first point (as mentioned before) is the RMSE variance when k-fold validation was done. Taking the 5 best results, it is possible to build the below box plot, which shows all combinations well below the RMSE threshold.
 
 ```{r RMSE_variation}
 group_lambda_stats %>% filter(cases %in% lambda_top_rmse$cases) %>% 
@@ -780,7 +757,7 @@ group_lambda_stats %>% filter(cases %in% lambda_top_rmse$cases) %>%
   ggplot(aes(x=l1l2,y=RMSE,color=l1l2)) + geom_boxplot() + theme(legend.position="bottom") + labs(title="RMSE variation due k-fold validation",x="lambda_1, lambda2", y = "RMSE")+ geom_hline(yintercept=target_rmse, linetype="dashed", color = "red",size=0.5) + theme_grey()
 ```
 
-The second inspection is to have a look at the films that couldn't be rated by the clustering mechanism. The table below shows the top 20 films in that category. After reviewing this list, those films seem to be mostly obscure and seems reasonable that couldn't be found in the clustering movie biases. Even if the user is not new, this result would be expected for rare films, which are not going to have many reviews. This is also reassuring since it minimises the risk of popular movies falling into this category and risking a higher prediction error.
+The second inspection is to have a look at the films that couldn't be rated by the clustering mechanism. The below table shows the top 20 films in that category. After reviewing this list, those films seem to be mostly obscure and thus seems reasonable that couldn't be found in the clustering movie biases. Even if the user is not new, this result would be expected for rare films.
 
 ```{r Analysis_2, eval=TRUE}
 ### Analyse test results, comments
@@ -796,10 +773,10 @@ The second inspection is to have a look at the films that couldn't be rated by t
 # Results
 <!-- a results section that presents the modelling results and discusses the model performance -->
 
-With all optimised parameters, it is time now to try to predict the ratings for the validation set. This will be done in two parts:
+With all optimised parameters, it is time now to try to predict the ratings for the validation set. This has been done in two parts:
 
-* First, the model will be re-train using all optimal parameters and the whole combined training+test dataset.
-* Then the model will be used to predict the ratings for the validation set and the RMSE will be calculated.
+* First, the model has been be re-trained using all optimal parameters and the whole combined training+test dataset.
+* Then, the model will be used to predict the ratings for the validation set and the RMSE will be calculated.
 
 The code to achieve this is presented below.
 
@@ -860,25 +837,25 @@ prediction_stats %>% select(-RMSE_3,-method_3) %>%
   kable_styling(latex_options = c("HOLD_position"),position = "center")
 ```
 
-In terms of meeting the RMSE requirements, this model has met the objective. However, as mentioned and hinted through this report, this model has some limitations:
+In terms of meeting the RMSE requirements, this model has met the objective. However, as mentioned and hinted through this report, the following limitations have been discovered:
 
 * First, the time required to fit and tune the model is considerable. On a laptop, this can take up a day or more, which makes the whole process slow to run and even slower if it requires multiple test and repetitions to find the optimal results.
-* Second, the issues regarding user variability have not been addressed (e.g. big variance of rating for one user). This is an area of improvement that perhaps will further improve the model if addressed.
+* Second, the issues regarding user variability have not been addressed (e.g. big variance of rating for one user). This is an area of improvement that perhaps will further improve the model.
 
-Having said that, this model is still relative simple and fast for predictions, which is a big advantage - future work may still try to leverage this feature via further modifications or combination with other methods.
+Having said that, this model is still relative simple and fast for predictions, which is a big advantage - future work may still want to leverage this feature, through further modifications or combination with other methods.
 
 \newpage
 # Conclusion
 <!-- a conclusion section that gives a brief summary of the report, its limitations and future work -->
 
-In conclusion, this report contains the development of a recommendation system, based on the one presented in the course's textbook. From this starting, the model was improved, segmenting users into groups and re-fitting the model accordingly. Through this re-fitting and further tuning, a RMSE of `r compare_RMSE %>% filter(Model=="Optimal Clusters + Optimised Lambdas") %>% pull(RMSE)` was obtained. This results exceeds the goal of achieving a value lower than `r target_rmse`.
+In conclusion, this report contains the development of a recommendation system, based on the one presented in the course's textbook. From this starting point, the model was improved by segmenting users into groups. Through this re-fitting and further tuning, a RMSE of `r compare_RMSE %>% filter(Model=="Optimal Clusters + Optimised Lambdas") %>% pull(RMSE)` was obtained. This results exceeds the goal of achieving a value lower than `r target_rmse`.
 
-As mentioned in the previous sections, despite its simplicity the resulting model is time-intensive when it comes to fitting. This is mainly due to the clustering process, which potentially requires multiple iterations. In addition, although it provides an improvement to the previous model, there are still many individual cases where the error is greater than acceptable to provide a reliable prediction of whether a user will like or dislike a particular movie.
+As mentioned in the previous sections, despite its simplicity the resulting model is time-intensive when it comes to fitting. This is mainly due to the clustering process, which potentially requires multiple iterations. Although it provides an improvement to the previous model, there are still many individual cases where the error is greater than acceptable to provide a reliable prediction of whether a user will like or dislike a particular movie.
 
-Of course this model can be improved. Some of the future work that could be done comprises:
+Of course, this model can be improved if further work is undertaken, namely:
 
 * Assess if $\lambda$ parameters per user cluster/movie improve the results vs. the extra time it will take to fit the model.
 * Cluster films by common characteristics (genre but also perhaps actor,director, etc. ) and see if it is worth to use that to provide more accurate user biases.
 * Explore other clustering methods, assessing both changes in RMSE and fitting effort.
 
-In addition to the above but perhaps out of scope in the context of this exercise (due to the way the validation set is created), it would be interesting to explore what is the optimal size for the training dataset. For instance, if we consider the that user cinematic preferences change over time perhaps the oldest reviews are not as important as the ones from last year. Therefore, this opens the opportunity of treat the biases as are function of time or simply discard older reviews and have a leaner dataset, which in turn will help to speed up the tuning process.
+In addition to the above, but perhaps out of scope in the context of this exercise (due to the way the validation set is created), it would be interesting to explore if there is an  optimal dataset size. For instance, if we consider the that user cinematic preferences change over time, perhaps the oldest reviews are not as important as the ones from last year. Therefore, this opens the opportunity to treat the biases as  function of time, or simply discard older reviews and have a leaner dataset resulting in faster processing times without a significant loss of accurary.
