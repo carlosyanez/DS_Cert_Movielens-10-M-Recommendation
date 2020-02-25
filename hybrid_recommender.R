@@ -75,8 +75,11 @@ Train_Test <- function(movielens) {
   if (!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
   # REUSING code provided in course materials.
 
-  # set.seed(seed, sample.kind="Rounding")
+  #commented, set outside of function for greater control
+  #set.seed(1, sample.kind="Rounding")
   # if using R 3.5 or earlier, use `set.seed(1)` instead
+  
+
   test_index <- createDataPartition(y = movielens$rating, times = 1, p = 0.1, list = FALSE)
   train <- movielens[-test_index, ]
   temp <- movielens[test_index, ]
@@ -557,7 +560,18 @@ Movielens_Data_Loader <- function() {
   movielens <- left_join(ratings, movies, by = "movieId")
 
   # Validation set will be 10% of MovieLens data
-  set.seed(1, sample.kind = "Rounding")
+  #changed code to autodetect version and set seed correctly
+  version_number<-as.double(version$minor)/10+as.double(version$major)
+  if(version_number<3.6){
+    set.seed(1)
+  }else{
+    set.seed(1, sample.kind="Rounding")
+  }
+  #set.seed(1, sample.kind="Rounding")
+  # if using R 3.5 or earlier, use `set.seed(1)` instead
+  
+  
+  #set.seed(1, sample.kind = "Rounding")
   # if using R 3.5 or earlier, use `set.seed(1)` instead
   test_index <- createDataPartition(y = movielens$rating, times = 1, p = 0.1, list = FALSE)
   edx <- movielens[-test_index, ]

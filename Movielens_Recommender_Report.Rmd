@@ -119,7 +119,13 @@ To achieve this, the function **Tidy_Up** has been created. The code for this fu
 edx_tidy_temp <- Tidy_Up(edx)
 
 #divide Train and Test datasets
-set.seed(200, sample.kind="Rounding")
+version_number<-as.double(version$minor)/10+as.double(version$major)
+if(version_number<3.6){
+  set.seed(200)
+}else{
+    set.seed(200, sample.kind="Rounding")
+}
+
 edx_train_test <- Train_Test(edx_tidy_temp)
 
 #remove temporary and original dataset to avoid filling up memory.
