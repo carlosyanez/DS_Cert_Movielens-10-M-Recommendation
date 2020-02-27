@@ -156,7 +156,7 @@ where
 * $rating_j$ : is a particular movie rating 
 * $m$ : is the number of all ratings for a particular movie
 * $n$ : is the total number of ratings submitted from a particular user (one rating per movie).
-* $ b_{i,j}$ : is the *movie bias* for a particular movie
+* $b_{i,j}$ : is the *movie bias* for a particular movie
 * $\lambda_1$ :  is a weighting parameter for *movie biases*.
 * $\lambda_2$ :  is a weighting parameter for *user biases*.
 
@@ -275,7 +275,6 @@ As mentioned before, each film has a set of genres they belong (from one to many
 ```{r genres_list, eval=TRUE}
 user_vector$genres %>% kable(caption="Genres in training set, ordered by occurrences",format = "latex", booktabs = TRUE,format.args = list(decimal.mark = '.', big.mark = " ")) %>%  kable_styling(latex_options = c("HOLD_position"))
 
-user_vector$genres %>% kable(caption="Genres in training set, ordered by occurrences",format = "html", booktabs = TRUE,format.args = list(decimal.mark = '.', big.mark = " ")) 
 ```
 
 In order to profile each user, this report has used the genre property in two ways:
@@ -854,7 +853,7 @@ Having said that, this model is still relative simple and fast for predictions, 
 # Conclusion
 <!-- a conclusion section that gives a brief summary of the report, its limitations and future work -->
 
-In conclusion, this report contains the development of a recommendation system, based on the one presented in the course's textbook. From this starting point, the model was improved by segmenting users into groups. Through this re-fitting and further tuning, a RMSE of `r compare_RMSE %>% filter(Model=="Optimal Clusters + Optimised Lambdas") %>% pull(RMSE)` was obtained. This results exceeds the goal of achieving a value lower than `r target_rmse`.
+In conclusion, this report contains the development of a recommendation system, based on the one presented in the course's textbook. From this starting point, the model was improved by segmenting users into groups. Through this re-fitting and further tuning, a RMSE of `r sprintf("%3.5f", compare_RMSE %>% filter(Model=="Optimal Clusters + Optimised Lambdas") %>% pull(RMSE))` was obtained. This results exceeds the goal of achieving a value lower than `r sprintf("%3.5f", target_rmse)`.
 
 As mentioned in the previous sections, despite its simplicity the resulting model is time-intensive when it comes to fitting. This is mainly due to the clustering process, which potentially requires multiple iterations. Although it provides an improvement to the previous model, there are still many individual cases where the error is greater than acceptable to provide a reliable prediction of whether a user will like or dislike a particular movie.
 
