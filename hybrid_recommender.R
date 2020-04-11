@@ -134,7 +134,7 @@ User_Vectoriser <- function(input_data) {
     summarise(avg_rating = mean(rating)) %>%
     mutate(genre = genres_list[1])
 
-  #repeat for reamining genres
+  #repeat for remaining genres
   v <- 2:nrow(genres)
   for (i in v) {
     user_averages_i <- input_data %>%
