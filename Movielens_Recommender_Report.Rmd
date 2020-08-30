@@ -264,7 +264,7 @@ All the previous observations notwithstanding, it is still worth pointing out th
 
 Perhaps, 8 million reviews is a large number of reviews and it is possible to generate ratings based on smaller groups without loss of accurary or without invalidating the averages approach. Perhalps, if data is segmented in groups with similar traits, the overall error may decrease.
 
-One way to achieve this is to group the users with similar movie preferences (i.e split the ones who like Shakespearean romances from the fans of action thrillers). In this excercise, the chosen was to undertake this task is to leverage the genres of the already rated films to create distinct user vectors or *profiles*.
+One way to achieve this is to group the users with similar movie preferences (i.e split the ones who like Shakespearean romances from the fans of action thrillers). In this exercise, the chosen method to undertake this task was to leverage the genres of the already rated films to create distinct user vectors or *profiles*.
 
 ```{r Create_User_Vector}
 user_vector <-User_Vectoriser(edx_train_test$train)
